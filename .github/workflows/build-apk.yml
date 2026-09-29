@@ -139,6 +139,36 @@ jobs:
           if [ ! -d android ]; then npx cap add android; fi
           npx cap sync android
 
+      # 安卓工程是现场生成的（.gitignore 忽略），签名密钥也得在此时放进去。
+      # Secret 存的是 base64 的 PKCS12 私钥。没配置就直接失败 ——
+      # 不能让流水线退回「Gradle 现场随机生成密钥」，那种包一个都盖不上旧版本。
+      - name: 还原签名密钥
+        env:
+          LW_DEBUG_KEYSTORE: ${{ secrets.LW_DEBUG_KEYSTORE }}
+        run: |
+          if [ -z "$LW_DEBUG_KEYSTORE" ]; then
+            echo "::error::缺少 Secret「LW_DEBUG_KEYSTORE」：没有固定签名，打出来的包会装不上旧版本。请按 README「固定签名」一节生成密钥并配置 Secret。"
+            exit 1
+          fi
+          echo "$LW_DEBUG_KEYSTORE" | base64 -d > mobile/android/app/lw-debug.p12
+          chmod 600 mobile/android/app/lw-debug.p12
+          echo "密钥已就位（$(stat -c%s mobile/android/app/lw-debug.p12) 字节）"
+
+      # 先确认「Secret 里的私钥」和「仓库记录的指纹」是同一把 ——
+      # 不然要等 Gradle 跑完才在包里发现问题。用的是 openssl，无需额外依赖。
+      - name: 核对密钥与仓库记录的指纹
+        run: |
+          EXPECT="$(grep -v '^#' build/signing-cert.sha256 | head -1 | tr -d ' \r\n')"
+          ACTUAL="$(openssl pkcs12 -in mobile/android/app/lw-debug.p12 \
+                     -passin pass:android -nokeys -clcerts 2>/dev/null \
+                   | openssl x509 -outform der | sha256sum | cut -d' ' -f1)"
+          echo "仓库记录：$EXPECT"
+          echo "密钥实际：$ACTUAL"
+          if [ "$EXPECT" != "$ACTUAL" ]; then
+            echo "::error::Secret 里的密钥与 build/signing-cert.sha256 不是同一把 —— 重新生成密钥后忘了同步 Secret？"
+            exit 1
+          fi
+
       - name: 打安卓补丁
         run: python3 build/patch_android.py
 
@@ -165,6 +195,14 @@ jobs:
           APK=$(find mobile/android/app/build/outputs/apk -name '*.apk' | head -1)
           if [ -z "$APK" ]; then echo "没有产出 APK"; exit 1; fi
           python3 build/check_apk_version.py "$APK"
+
+      # 与版本号同理：签名不对在本地完全看不出来，只有手机上会拒绝安装。
+      # 读包内证书指纹，和仓库记录的固定指纹比对。
+      - name: 校验包内签名
+        run: |
+          APK=$(find mobile/android/app/build/outputs/apk -name '*.apk' | head -1)
+          if [ -z "$APK" ]; then echo "没有产出 APK"; exit 1; fi
+          python3 build/check_apk_signer.py "$APK"
 
       - name: 收集产物
         id: collect

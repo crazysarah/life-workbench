@@ -1,0 +1,4 @@
+# APK 签名证书指纹（SHA-256），由 build/make_signing_key.py 生成。
+# 构建后由 build/check_apk_signer.py 拿它比对，确保每个包的签名都一样。
+# 只有指纹，没有私钥 —— 可以公开。
+0dd75d7b7447559797a1f1e493e14ab85abd61482a871f701c9092b3f155b38e

@@ -336,6 +336,52 @@ python3 build/check_apk_version.py    # 不给参数会自动找产物
 
 它直接读包内的 manifest，等价于 `aapt dump badging`，但不需要装 Android SDK。
 
+### 固定签名
+
+Android 规定：**同一个包名，签名必须一致**才能覆盖安装。签名对不上时系统直接拒绝
+（提示「签名不一致」「应用未安装」），只能先卸载再装 —— 而卸载会丢掉 App 里存的
+服务器地址和还没同步的离线记录。
+
+`assembleDebug` 用的是 Gradle 的调试密钥 `~/.android/debug.keystore`。
+**CI 每次都是全新的机器**，那个文件不存在，Gradle 不会报错，而是现场随机生成一把 ——
+于是每个包签名都不一样，一个都盖不上前一个。这在本地完全看不出来：构建日志一切正常，
+只有手机拒绝安装。
+
+所以密钥必须固定下来：
+
+| 东西 | 放在哪 | 说明 |
+|---|---|---|
+| 私钥 `lw-debug.p12` | GitHub Secret `LW_DEBUG_KEYSTORE`（base64） | **绝不入库**，`.gitignore` 已排除 `*.p12` |
+| 证书指纹 | `build/signing-cert.sha256` | 只有指纹、没有私钥，可以公开，用于构建后校验 |
+
+首次配置（只做一次）：
+
+```bash
+python3 build/make_signing_key.py          # 生成 build/lw-debug.p12 和指纹文件
+base64 -w0 build/lw-debug.p12 > /tmp/ks.b64
+# GitHub → Settings → Secrets and variables → Actions → New repository secret
+#   名称填 LW_DEBUG_KEYSTORE，值填 /tmp/ks.b64 的全部内容
+rm /tmp/ks.b64
+```
+
+CI 里有三道保险：
+
+| 步骤 | 作用 |
+|---|---|
+| 还原签名密钥 | 把 Secret 里的私钥写进现场生成的安卓工程；缺 Secret 直接失败，不退回「随机签名」 |
+| 核对密钥与仓库记录的指纹 | 用 `openssl` 算出私钥对应的证书指纹，和 `build/signing-cert.sha256` 比 —— 防止换了密钥忘了同步 Secret |
+| 校验包内签名 | 构建完解开 APK 读证书指纹，对不上整条流水线失败 |
+
+本地构建同样需要密钥：`build/patch_android.py` 会自动把 `build/lw-debug.p12`
+拷进安卓工程（所以本地先跑一次 `make_signing_key.py` 就行）。产物可以自己再验：
+
+```bash
+python3 build/check_apk_signer.py dist/app-debug.apk
+```
+
+> ⚠️ **换密钥 = 所有用户都要卸载重装一次**（换签名只能靠卸载）。
+> 除非私钥泄露，否则别重新生成 —— `make_signing_key.py` 默认拒绝覆盖已有密钥。
+
 ### 发新版
 
 ```bash
@@ -637,6 +683,10 @@ python3 build/smoke_test.py
 `check_apk_version.py` 解开 APK 读里面的二进制 manifest，跟 `VERSION` 对不上就失败。
 这是防「配置改对了但没进包」的那道闸。
 
+签名走的是同一套路数：`check_apk_signer.py` 读包内证书指纹，和
+`build/signing-cert.sha256` 里记的固定指纹比。签名不一致的包装不上旧版本，
+而这个在构建日志里完全看不出来 —— 只有手机会拒绝安装。
+
 `test_settings.js`、`test_version.py` 和 `check_client.py` 已经在 Actions 里当门禁，
 之后改前端跑一遍就行（`test_settings_e2e.js` 需要 server 依赖，没进 CI）。
 
@@ -669,9 +719,12 @@ life-workbench/
 │  ├─ make_client.py       从原始页面完整生成 client/index.html（重建用；含页面功能补丁）
 │  ├─ inject_api_base.py   给成品页面注入内置默认地址（日常构建走这个，可留空）
 │  ├─ sync_mobile.sh       一键生成安卓工程（含注入版本号）
-│  ├─ patch_android.py     给安卓工程打明文流量补丁
+│  ├─ patch_android.py     给安卓工程打明文流量 + 固定签名补丁
 │  ├─ set_version.py       把 VERSION 写进安卓工程（安卓工程是现场生成的，只能注入）
 │  ├─ check_apk_version.py 解开 APK 读包内真实版本号（不信构建配置，只信包）
+│  ├─ make_signing_key.py  生成固定签名密钥（本地跑一次；私钥别提交）
+│  ├─ check_apk_signer.py  读包内证书指纹，验收签名是否恒定（决定能不能覆盖安装）
+│  ├─ signing-cert.sha256  固定签名证书的指纹（只有指纹，可公开）
 │  ├─ check_client.py      客户端产物静态自检
 │  ├─ _harness.js          测试脚手架（最小 DOM / localStorage / vm 装载器）
 │  ├─ test_settings.js     服务器地址设置逻辑离线自测（不需要浏览器/真机/服务端）

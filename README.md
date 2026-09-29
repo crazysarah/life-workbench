@@ -350,6 +350,54 @@ python3 build/check_apk_version.py    # auto-discovers the artifact if you pass 
 It reads the manifest straight out of the APK — the same thing `aapt dump badging` does,
 without needing the Android SDK.
 
+### Signing
+
+Android refuses to install over an app whose signature differs: the install simply fails
+("App not installed", "signatures do not match"), and the only way forward is to uninstall
+first — which wipes the server address and any unsynced offline records kept in the app.
+
+`assembleDebug` signs with Gradle's debug keystore at `~/.android/debug.keystore`. CI runs on
+a **fresh machine every time**, so that file does not exist, and Gradle does not fail — it
+generates a brand new key on the spot. Every APK then ends up with a different signature and
+none of them can overwrite another. Nothing looks wrong in the build log; only the phone
+refuses the install.
+
+So the key is pinned:
+
+| Item | Where it lives | Notes |
+|---|---|---|
+| Private key `lw-debug.p12` | GitHub Secret `LW_DEBUG_KEYSTORE` (base64) | Never committed; `*.p12` is gitignored |
+| Certificate fingerprint | `build/signing-cert.sha256` | Fingerprint only, safe to publish |
+
+One-time setup:
+
+```bash
+python3 build/make_signing_key.py          # writes build/lw-debug.p12 and the fingerprint file
+base64 -w0 build/lw-debug.p12 > /tmp/ks.b64
+# GitHub → Settings → Secrets and variables → Actions → New repository secret
+#   name: LW_DEBUG_KEYSTORE, value: the whole contents of /tmp/ks.b64
+rm /tmp/ks.b64
+```
+
+CI enforces it in three places:
+
+| Step | What it does |
+|---|---|
+| Restore signing key | Writes the secret into the freshly generated Android project; a missing secret fails the build instead of silently falling back to a random key |
+| Check key against recorded fingerprint | Derives the certificate fingerprint from the key with `openssl` and compares it to `build/signing-cert.sha256`, so a rotated key with a stale secret is caught early |
+| Verify packaged signature | Reads the certificate out of the built APK and compares fingerprints |
+
+Local builds need the same key: `build/patch_android.py` copies `build/lw-debug.p12` into the
+generated Android project, so run `make_signing_key.py` once locally. Verify any artifact with:
+
+```bash
+python3 build/check_apk_signer.py dist/app-debug.apk
+```
+
+> ⚠️ **Rotating the key forces every user to uninstall and reinstall once** — that is the only
+> way to change a signature. Don't regenerate it unless the private key leaks;
+> `make_signing_key.py` refuses to overwrite an existing key by default.
+
 ### Cutting a release
 
 ```bash
