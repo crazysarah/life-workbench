@@ -1,0 +1,10 @@
+name: Probe G rebuild real secret
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: G 重新上传后再引用真密钥
+        env:
+          FOO: ${{ secrets.LW_DEBUG_KEYSTORE }}
+        run: echo "长度 ${#FOO}"
