@@ -53,9 +53,20 @@ jobs:
 
       - name: 准备 Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # 这个 action 默认会自己跑 sdkmanager --licenses 接受协议，
+          # 但 CI 是非交互环境，它会卡在 "Review licenses that have not been
+          # accepted (y/N)?" 拿不到输入然后 exit 1，整条流水线还没开始就挂了。
+          # 关掉它，协议交给下一步用 yes 管道接受。
+          accept-android-sdk-licenses: false
+          packages: ''
 
       - name: 安装 SDK 组件（Capacitor 7 需要 API 35）
         run: |
+          echo "ANDROID_HOME=${ANDROID_HOME:-未设置}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-未设置}"
+          echo "sdkmanager 路径：$(command -v sdkmanager || echo '不在 PATH')"
+          # 用 yes 管道喂 'y' 接受全部协议，避免非交互环境下卡在提示
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "platform-tools"
 
