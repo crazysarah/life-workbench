@@ -75,7 +75,19 @@ for i in $(seq 1 30); do
   fi
 done
 
-PUBLIC_IP="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || echo '<你的公网IP>')"
+# 对外访问地址：优先用 .env 里填的 PUBLIC_BASE_URL，没填就自动探测公网 IP
+BASE_URL="$(sed -n 's/^PUBLIC_BASE_URL=//p' .env 2>/dev/null | tr -d '\r' | head -1)"
+BASE_SOURCE=".env 的 PUBLIC_BASE_URL"
+if [ -z "$BASE_URL" ]; then
+  DETECTED_IP="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || echo '')"
+  if [ -n "$DETECTED_IP" ]; then
+    BASE_URL="http://${DETECTED_IP}:${PORT}"
+    BASE_SOURCE="自动探测公网 IP"
+  else
+    BASE_URL="http://<你的公网IP>:${PORT}"
+    BASE_SOURCE="探测失败，需自己填"
+  fi
+fi
 
 cat <<EOF
 
@@ -83,11 +95,18 @@ cat <<EOF
   部署完成
 ============================================================
 
-  访问地址：http://${PUBLIC_IP}:${PORT}
+  访问地址：${BASE_URL}      （来源：${BASE_SOURCE}）
   健康检查：curl http://127.0.0.1:${PORT}/api/health
 
   APK 里要填的服务端地址：
-      http://${PUBLIC_IP}:${PORT}
+      ${BASE_URL}
+
+EOF
+
+cat <<'EOF'
+  想让 APK 用这个地址，还要去 GitHub 仓库配一份（Actions 读不到 .env）：
+      Settings → Secrets and variables → Actions → Variables → New variable
+      名称 API_BASE，值填上面这个地址
 
 EOF
 

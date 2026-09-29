@@ -10,7 +10,7 @@
 
 用法：
     python build/make_client.py                        # 同源模式（浏览器直接开服务器地址）
-    python build/make_client.py --api-base http://1.2.3.4:8080   # 给 APK 用
+    python build/make_client.py --api-base http://203.0.113.10:8080   # 给 APK 用
 """
 
 import argparse
@@ -48,7 +48,7 @@ def read(path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--api-base', default='',
-                    help='服务端地址，如 http://150.109.255.241:8080；留空表示同源')
+                    help='服务端地址，如 http://203.0.113.10:8080（换成你自己的）；留空表示同源')
     ap.add_argument('--src', default=SRC_HTML)
     ap.add_argument('--out', default=OUT_HTML)
     args = ap.parse_args()

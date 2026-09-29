@@ -2,7 +2,7 @@
 # 一条命令跑完：生成客户端页面 -> 拷贝静态资源 -> 装 Capacitor -> 生成/同步安卓工程 -> 打补丁
 #
 # 用法：
-#   bash build/sync_mobile.sh http://150.109.255.241:8080
+#   bash build/sync_mobile.sh http://203.0.113.10:8080    # 换成你自己的服务器地址
 #   bash build/sync_mobile.sh                      # 不传地址 = 同源模式
 set -euo pipefail
 

@@ -57,8 +57,8 @@ docker --version && docker compose version
 ### 2. 上传代码
 
 ```bash
-# 本地：把仓库推到你的服务器
-scp -r life-workbench root@150.109.255.241:/opt/
+# 本地：把仓库推到你的服务器（换成你自己的 IP / 域名）
+scp -r life-workbench root@你的服务器IP:/opt/
 # 或者用 git（更推荐）
 # 服务器上：git clone <你的仓库地址> /opt/life-workbench
 ```
@@ -71,13 +71,16 @@ cp .env.example .env
 vi .env
 ```
 
-`.env` 里至少改这两个：
+`.env` 里至少改这几个：
 
 ```ini
 APP_PASSWORD=你自己的口令        # 手机 App 首次打开要输这个
 APP_SECRET=一串足够长的随机字符   # 用来派生登录态
 HTTP_PORT=8080
+PUBLIC_BASE_URL=               # 你的服务器对外地址，例 http://203.0.113.10:8080
 ```
+
+`PUBLIC_BASE_URL` 就是**手机要连的地址**，留空的话部署脚本会自动探测公网 IP。
 
 ### 4. 启动
 
@@ -126,11 +129,19 @@ curl -s http://127.0.0.1:8080/api/tables -H "Authorization: Bearer <token>"
 
 ## 二、构建 APK
 
-APK 里的前端是**内嵌**的，服务端地址在构建时写死进去。所以先确定地址：
+APK 里的前端是**内嵌**的，服务端地址在构建时写进去。所以出包前先确定地址：
 
 ```
-http://150.109.255.241:8080
+http://你的服务器IP:端口      例：http://203.0.113.10:8080
+https://你的域名            例：https://life.example.com
 ```
+
+这个地址**不在代码里**，靠两处配置提供（两处填同一个值）：
+
+| 用在哪 | 配在哪 |
+|---|---|
+| 服务端部署（脚本打印访问地址） | 服务器上的 `.env` → `PUBLIC_BASE_URL` |
+| 构建 APK（Actions 读不到 `.env`） | GitHub 仓库 **Variables** → `API_BASE` |
 
 ### 方式 A：GitHub Actions（推荐）
 
@@ -138,9 +149,13 @@ http://150.109.255.241:8080
 
 1. 把仓库推到你的 GitHub
 2. 打开仓库 → **Settings → Actions → General**，确认 Actions 是启用的
-3. 改地址：编辑 `.github/workflows/build-apk.yml` 里的 `DEFAULT_API_BASE`
+3. 配地址：**Settings → Secrets and variables → Actions → Variables → New variable**
+   名称 `API_BASE`，值填你的服务器地址（例 `http://203.0.113.10:8080`）
 4. 推送代码，或到 **Actions → Build Android APK → Run workflow** 手动触发
+   （手动触发时也能在 `api_base` 输入框临时填一个地址，会覆盖变量）
 5. 跑完在 workflow 页面底部 **Artifacts** 下载 `life-workbench-apk-debug`
+
+> 没配 `API_BASE` 又没在触发时填地址，构建会**直接报错停下**并提示去哪配，不会闷头出一个连不上的包。
 
 > Android SDK 和 Gradle 依赖第一次要下几分钟，后续有缓存会快。
 
@@ -150,7 +165,7 @@ http://150.109.255.241:8080
 
 ```bash
 # 一键：生成页面 → 拷资源 → 装 Capacitor → 建安卓工程 → 打补丁
-bash build/sync_mobile.sh http://150.109.255.241:8080
+bash build/sync_mobile.sh http://你的服务器IP:8080
 
 cd mobile/android
 ./gradlew assembleDebug
@@ -179,9 +194,9 @@ adb install -r app-debug.apk
 
 ## 四、换服务器地址
 
-APK 里的地址是构建时写死的。两种情况：
+APK 里的地址是构建时写进去的。两种改法：
 
-**服务器 IP 变了**：改 `.github/workflows/build-apk.yml` 的 `DEFAULT_API_BASE`，
+**服务器 IP 变了**：改 GitHub 仓库变量 `API_BASE`（和服务器 `.env` 的 `PUBLIC_BASE_URL`），
 重新触发一次构建，装新的 APK。
 
 **只是想临时试另一个地址**：App 里连不上时，可以用手机连电脑调试（`chrome://inspect`），

@@ -16,9 +16,9 @@ on:
   workflow_dispatch:
     inputs:
       api_base:
-        description: '服务端地址（APK 内置，例如 http://150.109.255.241:8080）'
+        description: '服务端地址（留空则用仓库变量 API_BASE，例 http://203.0.113.10:8080）'
         required: false
-        default: 'http://150.109.255.241:8080'
+        default: ''
       build_type:
         description: '构建类型'
         required: true
@@ -27,8 +27,10 @@ on:
         options: [debug, release]
 
 env:
-  # 想改服务器地址，改这里（或者手动触发时临时填）
-  DEFAULT_API_BASE: http://150.109.255.241:8080
+  # 服务端地址不写死在这个文件里，从仓库变量读：
+  #   Settings → Secrets and variables → Actions → Variables → New variable
+  #   名称 API_BASE，值形如 http://203.0.113.10:8080 或 https://life.example.com
+  DEFAULT_API_BASE: ${{ vars.API_BASE }}
 
 jobs:
   apk:
@@ -72,6 +74,10 @@ jobs:
         run: |
           API_BASE="${{ github.event.inputs.api_base }}"
           if [ -z "$API_BASE" ]; then API_BASE="$DEFAULT_API_BASE"; fi
+          if [ -z "$API_BASE" ]; then
+            echo "::error::没有服务端地址。请到仓库 Settings → Secrets and variables → Actions → Variables 新建变量 API_BASE，或手动触发 workflow 时在 api_base 里填写。"
+            exit 1
+          fi
           BUILD_TYPE="${{ github.event.inputs.build_type }}"
           if [ -z "$BUILD_TYPE" ]; then BUILD_TYPE="debug"; fi
           echo "api_base=$API_BASE" >> "$GITHUB_OUTPUT"
