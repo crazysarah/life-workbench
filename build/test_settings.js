@@ -297,5 +297,67 @@ const { ok, eq, report } = createAsserts();
     ok('base() 仍可读', lw.base() === 'http://a.b:8080');
   }
 
+  /* ---- 21. 设置面板里的「清空示例数据」（原 topbar 那颗垃圾桶收进来了） ---- */
+  {
+    const { sandbox, dom } = loadAdapter({ config: { apiBase: 'http://a.b:8080' } });
+    let called = 0;
+    sandbox.lwSampleStatus = () => ({ records: 12, media: 3, habits: 2, total: 15 });
+    sandbox.lwClearSamples = () => { called++; return true; };
+    const ui = openSettingsViaUi(sandbox, dom, false);
+    ok('面板里有「数据维护」分组', ui.texts().some(t => t === '数据维护'), ui.texts().join(' | '));
+    const clearBtn = findAll(ui.panel, 'BUTTON')
+      .find(b => b.textContent && b.textContent.indexOf('清空示例数据') >= 0);
+    ok('有清空示例数据按钮', !!clearBtn);
+    ok('按钮上标了待清条数（记录+收藏+打卡）',
+       !!clearBtn && clearBtn.textContent.indexOf('17') >= 0, clearBtn && clearBtn.textContent);
+    ok('说明里讲清了不会动用户自己的内容',
+       ui.texts().some(t => t.indexOf('你自己录入的内容不受影响') >= 0));
+    clearBtn.onclick();
+    eq('点击后调用了页面侧的清空函数', called, 1);
+    eq('清空后面板关闭', dom.doc.getElementById('lw-settings'), null);
+    const host = dom.doc.getElementById('lw-toast-host');
+    ok('清空后给了反馈',
+       !!host && host.children.some(c => c.textContent.indexOf('示例数据已清空') >= 0),
+       host ? host.children.map(c => c.textContent).join(' | ') : '无 toast');
+  }
+
+  /* ---- 22. 示例已清空：入口消失，只留一句说明 ---- */
+  {
+    const { sandbox, dom } = loadAdapter({ config: { apiBase: 'http://a.b:8080' } });
+    sandbox.lwSampleStatus = () => ({ records: 0, media: 0, habits: 0, total: 0 });
+    sandbox.lwClearSamples = () => false;
+    const ui = openSettingsViaUi(sandbox, dom, false);
+    ok('清空后不再有按钮',
+       !findAll(ui.panel, 'BUTTON').some(b => b.textContent && b.textContent.indexOf('清空示例数据') >= 0));
+    ok('给了「已经清空」的说明', ui.texts().some(t => t.indexOf('已经清空') >= 0), ui.texts().join(' | '));
+  }
+
+  /* ---- 23. 页面没暴露清空能力时整块隐藏（安全降级，不显示假入口） ---- */
+  {
+    const { sandbox, dom } = loadAdapter({ config: { apiBase: 'http://a.b:8080' } });
+    const ui = openSettingsViaUi(sandbox, dom, false);
+    ok('没有能力时不出现「数据维护」', !ui.texts().some(t => t === '数据维护'));
+    ok('也不出现清空按钮',
+       !findAll(ui.panel, 'BUTTON').some(b => b.textContent && b.textContent.indexOf('清空示例数据') >= 0));
+  }
+
+  /* ---- 24. 齿轮：够大、够显眼（之前 34px + 40% 透明，用户反馈看不到） ---- */
+  {
+    const { dom } = loadAdapter({ config: { apiBase: 'http://a.b:8080' } });
+    const st = dom.doc.getElementById('lw-gear-style');
+    ok('齿轮样式已注入', !!st);
+    const css = st.textContent;
+    const base = css.slice(css.indexOf('#lw-gear{'), css.indexOf('#lw-gear:active'));
+    const w = /width:(\d+)px/.exec(base);
+    ok('齿轮常态尺寸 ≥44px', !!w && Number(w[1]) >= 44, w && w[1]);
+    const icon = /#lw-gear svg\{width:(\d+)px/.exec(css);
+    ok('齿轮图标 ≥22px', !!icon && Number(icon[1]) >= 22, icon && icon[1]);
+    ok('常态不再半透明', !/opacity:\.\d/.test(base), base.slice(0, 60));
+    ok('常态是实心品牌色', /background:#4d3047/.test(base), base.slice(0, 80));
+    const mobile = /@media\(max-width:860px\)\{#lw-gear\{[^}]*width:(\d+)px/.exec(css);
+    ok('移动端齿轮再大一档（≥50px）', !!mobile && Number(mobile[1]) >= 50, mobile && mobile[1]);
+    ok('未配地址时仍是醒目提醒色', /#lw-gear\.lw-alert\{[^}]*background:#b44d43/.test(css));
+  }
+
   process.exit(report('test_settings') ? 0 : 1);
 })();

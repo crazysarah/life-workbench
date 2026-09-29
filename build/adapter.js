@@ -312,15 +312,19 @@ function lwEnsureGearStyle() {
   var st = document.createElement('style');
   st.id = LW_GEAR_STYLE_ID;
   st.textContent =
-    '#lw-gear{position:fixed;right:18px;bottom:66px;z-index:91;width:34px;height:34px;padding:0;' +
+    // 常驻悬浮按钮：实心品牌色 + 明显投影，一眼能看到；移动端再放大一档方便点按
+    '#lw-gear{position:fixed;right:18px;bottom:66px;z-index:91;width:46px;height:46px;padding:0;' +
     'display:flex;align-items:center;justify-content:center;border-radius:50%;cursor:pointer;' +
-    'border:1px solid rgba(85,69,55,.14);background:rgba(255,253,250,.94);color:#746d63;' +
-    'box-shadow:0 8px 24px rgba(53,41,31,.12);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);' +
-    'opacity:.4;transition:opacity .2s;-webkit-tap-highlight-color:transparent}' +
-    '#lw-gear:active,#lw-gear:hover,#lw-gear.lw-on{opacity:1}' +
-    '#lw-gear svg{width:17px;height:17px;fill:none;stroke:currentColor}' +
-    '#lw-gear.lw-alert{border-color:#d68f87;background:#f5dcd8;color:#b44d43;opacity:1}' +
-    '@media(max-width:860px){#lw-gear{right:14px;bottom:calc(130px + env(safe-area-inset-bottom))}}';
+    'border:1px solid rgba(77,48,69,.92);background:#4d3047;color:#fffdfa;' +
+    'box-shadow:0 8px 22px rgba(77,48,69,.32);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);' +
+    'opacity:1;transition:transform .15s,box-shadow .2s,background .2s;-webkit-tap-highlight-color:transparent}' +
+    '#lw-gear:active,#lw-gear:hover,#lw-gear.lw-on{background:#3d2639;transform:translateY(-1px);' +
+    'box-shadow:0 11px 28px rgba(77,48,69,.4)}' +
+    '#lw-gear svg{width:24px;height:24px;fill:none;stroke:currentColor}' +
+    '#lw-gear.lw-alert{border-color:#b44d43;background:#b44d43;color:#fff;animation:lwGearPulse 2.4s infinite}' +
+    '@keyframes lwGearPulse{50%{box-shadow:0 0 0 7px rgba(180,77,67,.22)}}' +
+    '@media(max-width:860px){#lw-gear{right:14px;bottom:calc(130px + env(safe-area-inset-bottom));' +
+    'width:54px;height:54px}#lw-gear svg{width:27px;height:27px}}';
   (document.head || document.documentElement).appendChild(st);
 }
 
@@ -357,6 +361,16 @@ function lwRefreshAll() {
       }
     });
   }
+}
+
+/* 页面侧暴露的示例数据统计（见 build/make_client.py 里的页面补丁）。
+   页面没提供这个能力时返回 -1，设置面板会把整块「数据维护」隐藏掉。 */
+function lwSampleTotal() {
+  if (typeof window.lwClearSamples !== 'function' || typeof window.lwSampleStatus !== 'function') return -1;
+  try {
+    var s = window.lwSampleStatus() || {};
+    return (Number(s.total) || 0) + (Number(s.habits) || 0);
+  } catch (e) { return -1; }
 }
 
 function lwOpenSettings(guide) {
@@ -435,6 +449,32 @@ function lwOpenSettings(guide) {
       setMsg('已填回打包时内置的地址，点「保存并连接」生效。');
     };
     subRow.appendChild(resetAddr);
+  }
+
+  /* ---- 数据维护：清空内置示例数据 ----
+     原本是 topbar 上的一颗垃圾桶按钮（手机上又小又容易误触），收进设置里更清爽。 */
+  var sampleTotal = lwSampleTotal();
+  var maint = null;
+  if (sampleTotal >= 0) {
+    maint = el('div', 'margin-top:16px;padding-top:14px;border-top:1px solid #f0e9df;');
+    maint.appendChild(el('div', 'font-size:12px;font-weight:700;color:#746d63;', '数据维护'));
+    if (sampleTotal > 0) {
+      var clearSampleBtn = el('button', 'margin-top:10px;width:100%;padding:12px;border:1px solid #e3d0c7;' +
+        'border-radius:12px;background:#fdf4f0;color:#b65f42;font-size:14px;font-weight:600;cursor:pointer;',
+        '清空示例数据（' + sampleTotal + ' 条）');
+      clearSampleBtn.type = 'button';
+      clearSampleBtn.onclick = function () {
+        if (window.lwClearSamples() === false) { setMsg('已经没有示例数据了。'); return; }
+        close();
+        lwToast('示例数据已清空，你自己记的内容都还在', 'ok');
+      };
+      maint.appendChild(clearSampleBtn);
+      maint.appendChild(el('div', 'margin-top:8px;font-size:11px;color:#b3aa9e;line-height:1.7;',
+        '只会删掉内置的示例记录、示例打卡和示例收藏，你自己录入的内容不受影响。'));
+    } else {
+      maint.appendChild(el('div', 'margin-top:8px;font-size:11.5px;color:#b3aa9e;line-height:1.7;',
+        '示例数据已经清空，没有需要维护的内容。'));
+    }
   }
 
   var skip = null;
@@ -550,6 +590,7 @@ function lwOpenSettings(guide) {
   box.appendChild(msg);
   box.appendChild(statusLine);
   box.appendChild(subRow);
+  if (maint) box.appendChild(maint);
   if (skip) box.appendChild(skip);
   mask.appendChild(box);
   document.body.appendChild(mask);

@@ -292,6 +292,10 @@ adb install -r app-debug.apk
 面板里还能看到当前地址、在线/本地模式、待同步条数，以及「清除本机口令」和
 「填回内置默认地址」两个操作。
 
+面板底部还有一块**数据维护**：内置示例数据没清干净时会出现「清空示例数据（N 条）」。
+这个入口原本是页面顶部那颗垃圾桶按钮 —— 手机上又小又容易误触，就收进设置里了。
+它只删内置的示例记录 / 示例打卡 / 示例收藏，你自己录入的内容一律不动。
+
 几个行为上的细节：
 
 - 地址容错：只填 IP 或 `IP:端口` 会自动补 `http://`；结尾带不带 `/` 或 `/api` 都认
@@ -474,6 +478,11 @@ docker compose up -d --build
 如果是 https，证书必须是**受信任的** —— 自签证书 WebView 会直接拒绝，
 用 http 或者换成受信任的证书。
 
+**找不到「清空示例」了**
+它收进设置面板了：右下角齿轮 → 面板底部「数据维护」→ 清空示例数据。
+只在还有示例数据时出现，清空后那里会变成「示例数据已经清空」。
+（原先是页面顶部的一颗垃圾桶按钮，手机上太小容易误触，已移除。）
+
 **App 打开白屏**
 多半是还没配服务器地址、或者没输口令。新版首次打开会自动弹设置面板引导填写；
 填过之后如果还白，下拉刷新会重新弹登录框，不行就杀掉 App 重开。
@@ -507,7 +516,7 @@ curl -X POST http://127.0.0.1:8080/api/t/money/clear \
 改完配置或前端之后，不用起 Docker 也能先验一遍：
 
 ```bash
-node build/test_settings.js       # 服务器地址设置逻辑（90 项：容错、换服务器清态、探活、面板 DOM）
+node build/test_settings.js       # 设置面板逻辑（108 项：地址容错、换服务器清态、探活、面板 DOM、清空示例、齿轮）
 python3 build/check_client.py     # 客户端产物：语法、外链、宿主残留
 python3 build/check_compose.py    # compose 结构与变量（需 pyyaml）
 
@@ -551,7 +560,7 @@ life-workbench/
 │  └─ icon*.svg
 ├─ build/                  构建与自检脚本
 │  ├─ adapter.js           替换掉原资料库 SDK 的 API 适配器（含服务器地址设置面板）
-│  ├─ make_client.py       从原始页面完整生成 client/index.html（重建用）
+│  ├─ make_client.py       从原始页面完整生成 client/index.html（重建用；含页面功能补丁）
 │  ├─ inject_api_base.py   给成品页面注入内置默认地址（日常构建走这个，可留空）
 │  ├─ sync_mobile.sh       一键生成安卓工程
 │  ├─ patch_android.py     给安卓工程打明文流量补丁

@@ -42,6 +42,11 @@ MUST_HAVE = [
     'function lwProbe',
     'lw_api_base',
     '/api/health',
+    # 「清空示例」收进设置面板这条链路（页面侧暴露能力，适配器侧出入口）
+    'window.lwSampleStatus',
+    'window.lwClearSamples',
+    'function lwSampleTotal',
+    '数据维护',
 ]
 
 MUST_NOT_HAVE = [
@@ -51,6 +56,8 @@ MUST_NOT_HAVE = [
     'R3tOBq2PgKfc2Vu0uf1Inp',
     'UlAWUbiHzQiw93hps3z0lG',
     '/page/page_comm/inject.js',
+    # 旧按钮已移除，不该再有任何引用（DOM、getElementById、CSS 都算）
+    'clearSamplesBtn',
 ]
 
 

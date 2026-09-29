@@ -45,6 +45,89 @@ def read(path):
         return f.read()
 
 
+# --------------------------------------------------------------------------
+# 页面功能补丁
+#
+# 「清空示例」原先是 topbar 上的一颗垃圾桶按钮：手机上又小又容易误触，
+# 而且它只是「示例数据」的清理入口，不该占着首屏。改成由设置面板
+# （build/adapter.js）提供入口，页面这里只把「能力」暴露出去：
+#     window.lwSampleStatus()  -> 还有多少示例数据
+#     window.lwClearSamples()  -> 执行清空（自带二次确认），返回 false 表示没得清
+#
+# 每条补丁都严格校验命中次数：源页面改版导致补丁打不上时**直接报错退出**，
+# 不会静默产出一个功能缺失的包。
+# --------------------------------------------------------------------------
+
+PAGE_PATCH_REGEX = [
+    (
+        '移除 topbar 的清空示例按钮',
+        r'[ \t]*<button[^>]*\bid="clearSamplesBtn"[^\n]*\n',
+        '',
+    ),
+    (
+        'renderBackupStatus 不再维护该按钮的显隐',
+        r"[ \t]*function renderBackupStatus\(\)\{document\.getElementById\('clearSamplesBtn'\)\.hidden=[^\n]*\n",
+        '  /* 清空示例入口已移入设置面板（见 build/adapter.js），这里不再维护按钮显隐 */\n'
+        '  function renderBackupStatus(){}\n',
+    ),
+    (
+        '清空示例改为暴露给设置面板调用',
+        r"[ \t]*document\.getElementById\('clearSamplesBtn'\)\.addEventListener\('click',[^\n]*\n",
+        '    /* 清空示例数据：入口在设置面板里，这里只暴露能力给它调 */\n'
+        '    window.lwSampleStatus=function(){const records=state.records.filter(r=>r.sample).length,'
+        'media=state.mediaItems.filter(item=>item.sample).length;'
+        'return{records:records,media:media,habits:state.habits.filter(h=>h.sample).length,'
+        'total:records+media};};\n'
+        '    window.lwClearSamples=function(){const s=window.lwSampleStatus();'
+        'if(!s.total&&!s.habits)return false;'
+        'if(!confirm(`将清空 ${s.total} 条示例记录和示例打卡，你自己的内容会保留。是否继续？`))return false;'
+        'state.records=state.records.filter(r=>!r.sample);'
+        'state.mediaItems=state.mediaItems.filter(item=>!item.sample);'
+        'state.habits.forEach(h=>{if(h.sample){h.entries={};h.sample=false;}});'
+        'state.settings.weeklyPlan=DEFAULT_PLAN.map(x=>({...x}));'
+        'const saved=saveState();renderAll();if(saved)toast(\'示例内容已清空\');return true;};\n',
+    ),
+]
+
+PAGE_PATCH_LITERAL = [
+    (
+        '移动端 topbar 不再给已删按钮留格子',
+        '.top-actions{width:100%;min-width:0;display:grid;'
+        'grid-template-columns:48px minmax(0,1fr) minmax(0,1.35fr)}'
+        '.top-actions .save-state{display:none}'
+        '.top-actions:has(#clearSamplesBtn[hidden]){grid-template-columns:minmax(0,1fr) minmax(0,1.35fr)}'
+        '.top-actions .btn{width:100%;min-width:0;min-height:46px;padding:0 8px;white-space:nowrap}'
+        '.top-actions #clearSamplesBtn span{display:none}',
+        '.top-actions{display:none}',
+    ),
+]
+
+
+def apply_page_patches(html):
+    for name, pattern, repl in PAGE_PATCH_REGEX:
+        html, n = re.subn(pattern, repl, html)
+        if n != 1:
+            sys.exit('[make_client] 页面补丁「%s」命中 %d 处（期望 1 处）。\n'
+                     '  源页面结构可能已经变化，请核对 build/make_client.py 里的锚点。' % (name, n))
+        print('[make_client] 页面补丁：%s' % name)
+
+    for name, old, new in PAGE_PATCH_LITERAL:
+        n = html.count(old)
+        if n != 1:
+            sys.exit('[make_client] 页面补丁「%s」命中 %d 处（期望 1 处）。\n'
+                     '  源页面结构可能已经变化，请核对 build/make_client.py 里的锚点。' % (name, n))
+        html = html.replace(old, new)
+        print('[make_client] 页面补丁：%s' % name)
+
+    # 补丁打完后不该再有任何地方引用旧按钮
+    if 'clearSamplesBtn' in html:
+        sys.exit('[make_client] 页面补丁执行后仍残留 clearSamplesBtn 引用，已中止。')
+    for fn in ['window.lwSampleStatus', 'window.lwClearSamples']:
+        if fn not in html:
+            sys.exit('[make_client] 页面补丁执行后缺少 %s，已中止。' % fn)
+    return html
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--api-base', default='',
@@ -115,6 +198,9 @@ def main():
         flags=re.IGNORECASE,
     )
     print('[make_client] 移除宿主注入脚本 %d 个' % n_host)
+
+    # ---------- 3c. 页面功能补丁 ----------
+    replaced = apply_page_patches(replaced)
 
     # ---------- 4. 输出 ----------
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
