@@ -1,77 +1,89 @@
-# 生活工作台 · 自建版
+# Life Workbench · Self-hosted
 
-一个装在手机上的 App（Capacitor 套壳 APK）+ 一套自己掌控的服务端（Docker Compose）。
-记账、习惯打卡、减脂健身、日程、待买清单、书影音收藏六个模块，
-数据存在**你自己的服务器**上，换手机重新登录数据都在。
+**English** | [简体中文](README.zh-CN.md)
 
-- 前端：单文件页面（约 190 KB，零外部依赖），数据层指向自建 API
-- 后端：Node 22 + Express + SQLite，单容器，数据卷持久化
-- 客户端：Capacitor 7 套壳成安卓 APK，前端内嵌在包里（断网也能开界面）
-- 服务器地址：**装完在 App 里就能填 / 能改**（右下角齿轮），不用为了换地址重新打包
-- 部署：`docker compose up -d --build` 一条命令
-- 出包：GitHub Actions 云端构建 APK，本机不需要装 Android SDK
+> This is a **condensed Quick Start** aimed at English readers: architecture, server deploy,
+> APK build, install, changing the server address, and troubleshooting.
+> The full documentation — HTTPS/domain upgrade, backup & restore, API reference, local
+> self-checks, complete project layout, long-form FAQ — lives in
+> [README.zh-CN.md](README.zh-CN.md) (Chinese).
+
+A personal life app you host yourself: an installable Android app (Capacitor shell) plus a
+server you control (Docker Compose). Six modules — ledger, habits, fitness, schedule, shopping
+list, media collection. **Your data lives on your own server**: wipe the phone, log in again,
+everything is still there.
+
+- **Frontend** — one self-contained HTML page (~190 KB, zero external dependencies); its data layer talks to your own API
+- **Backend** — Node 22 + Express + SQLite, a single container with a persistent volume
+- **Client** — Capacitor 7 shell → Android APK; the UI is bundled inside, so it opens offline
+- **Server address** — settable **inside the app** (gear button, bottom-right); no rebuild needed to point it at another server
+- **Deploy** — `docker compose up -d --build`
+- **Build** — GitHub Actions produces the APK; no local Android SDK required
 
 ---
 
-## 架构
+## Architecture
 
 ```
 ┌──────────────────────────────┐
-│  手机 App（Capacitor APK）    │
-│  ├─ WebView 加载内嵌前端       │
-│  └─ fetch ──► /api/*          │
-└───────────────┬───────────────┘
+│  Phone app (Capacitor APK)   │
+│  ├─ WebView loads bundled UI │
+│  └─ fetch ──► /api/*         │
+└───────────────┬──────────────┘
                 │ HTTP(S)
                 ▼
 ┌──────────────────────────────┐
-│  你的服务器 (Docker)          │
-│  └─ api   Node22 + Express    │
-│           └─ SQLite (数据卷)   │
-│                               │
-│  反代（可选，你自己决定）        │
-│  已有 nginx/Traefik 就用现成的  │
-│  没有再用仓库自带的 Caddy        │
+│  Your server (Docker)        │
+│  └─ api   Node 22 + Express  │
+│           └─ SQLite (volume) │
+│                              │
+│  reverse proxy (optional)    │
+│  already have nginx/Traefik? │
+│  use yours — otherwise the   │
+│  bundled Caddy               │
 └──────────────────────────────┘
 ```
 
-**`docker compose up -d --build` 只起后端**，一条命令直接可用。
-仓库自带的 Caddy 是可选件，放在 `deploy/docker-compose.caddy.yml`，
-需要时叠加使用；你已经有反代就完全不用理它。
+`docker compose up -d --build` starts **the backend only** — one command and you are up. The
+bundled Caddy is optional and kept in `deploy/docker-compose.caddy.yml`; if you already run a
+reverse proxy you can ignore it completely.
 
-前端页面本身不直连数据库，所有读写都通过那四个函数走 HTTP：
+The page never talks to a database directly. Every read and write goes through four functions
+that speak HTTP:
 
-| 前端函数 | HTTP | 说明 |
+| Front-end function | HTTP | Purpose |
 |---|---|---|
-| `dbFetchAll(table, cb)` | `GET /api/t/:table` | 拉全表 |
-| `dbAdd(table, props, cb)` | `POST /api/t/:table` | 新增 |
-| `dbUpdate(table, id, props)` | `PATCH /api/t/:table/:id` | 修改（合并字段） |
-| `dbDelete(table, id)` | `DELETE /api/t/:table/:id` | 删除 |
+| `dbFetchAll(table, cb)` | `GET /api/t/:table` | fetch the whole table |
+| `dbAdd(table, props, cb)` | `POST /api/t/:table` | insert |
+| `dbUpdate(table, id, props)` | `PATCH /api/t/:table/:id` | update (fields merged) |
+| `dbDelete(table, id)` | `DELETE /api/t/:table/:id` | delete |
 
-六张表的 `table` 取值：`money` `habit` `plan` `fitness` `shopping` `media`。
+`table` is one of `money`, `habit`, `plan`, `fitness`, `shopping`, `media`.
 
 ---
 
-## 一、服务端部署
+## 1. Deploy the server
 
-### 1. 准备
+### Requirements
 
-服务器需要装了 Docker 和 Docker Compose 插件。Debian/Ubuntu 上：
+Docker with the Compose plugin (Debian/Ubuntu):
 
 ```bash
 curl -fsSL https://get.docker.com | sh
 docker --version && docker compose version
 ```
 
-### 2. 上传代码
+### Get the code
 
 ```bash
-# 本地：把仓库推到你的服务器（换成你自己的 IP / 域名）
-scp -r life-workbench root@你的服务器IP:/opt/
-# 或者用 git（更推荐）
-# 服务器上：git clone <你的仓库地址> /opt/life-workbench
+# from your machine
+scp -r life-workbench root@YOUR_SERVER_IP:/opt/
+
+# or, on the server (preferred)
+git clone <your-repo-url> /opt/life-workbench
 ```
 
-### 3. 配置
+### Configure
 
 ```bash
 cd /opt/life-workbench
@@ -79,104 +91,108 @@ cp .env.example .env
 vi .env
 ```
 
-`.env` 里至少改这几个：
+The four values that matter:
 
 ```ini
-APP_PASSWORD=你自己的口令        # 手机 App 首次打开要输这个
-APP_SECRET=一串足够长的随机字符   # 用来派生登录态
+APP_PASSWORD=choose-your-own       # the app asks for this on first launch
+APP_SECRET=a-long-random-string    # derives login tokens
 HTTP_PORT=8080
-PUBLIC_BASE_URL=               # 你的服务器对外地址，例 http://203.0.113.10:8080
+PUBLIC_BASE_URL=                   # public address, e.g. http://203.0.113.10:8080
 ```
 
-`PUBLIC_BASE_URL` 就是**手机要连的地址**，留空的话部署脚本会自动探测公网 IP。
+`PUBLIC_BASE_URL` is **the address your phone will connect to**. Leave it empty and the deploy
+script probes for the public IP itself.
 
-`BIND_ADDR` 决定服务端口对谁开放，按你的情况选：
+`BIND_ADDR` decides who can reach the port — pick the row that matches your setup:
 
-| 你的情况 | `BIND_ADDR` | 反代上游填什么 |
+| Your setup | `BIND_ADDR` | Reverse-proxy upstream |
 |---|---|---|
-| 直接 IP 访问，没反代 | 留空（= `0.0.0.0`） | — |
-| 本机已有 nginx / Traefik 等反代 | `127.0.0.1` | `http://127.0.0.1:8080` |
-| 反代也跑在 docker 里 | `127.0.0.1`，并把 `docker-compose.yml` 里 `api` 的 `ports:` 两行删掉 | `http://life-workbench-api:8080` |
+| Direct IP access, no proxy | leave empty (= `0.0.0.0`) | — |
+| You already run nginx / Traefik on the host | `127.0.0.1` | `http://127.0.0.1:8080` |
+| Your proxy runs in Docker too | `127.0.0.1`, and delete the two `ports:` lines under `api` in `docker-compose.yml` | `http://life-workbench-api:8080` |
 
-填 `127.0.0.1` 之后，8080 只对本机开放，公网上扫不到这个端口，比直连安全。
+With `127.0.0.1` the port is host-local only — not reachable from, or scannable on, the internet.
 
-`DATA_VOLUME` 决定数据库文件放哪，**建议留空**：
+`DATA_VOLUME` decides where the database file lives. **Leave it empty.**
 
-| 填什么 | 效果 | 备份方式 |
+| Value | Where it lands | How to back it up |
 |---|---|---|
-| 留空（推荐） | 用 docker 卷 `lw-data` | `docker compose cp api:/data/workbench.db ./备份.db` |
-| `./data` | 存到仓库目录下，宿主机上直接可见 | 直接 `cp data/workbench.db` |
+| empty (recommended) | Docker named volume `lw-data` | `docker compose cp api:/data/workbench.db ./backup.db` |
+| `./data` | a directory in the repo, visible on the host | `cp data/workbench.db` directly |
 
-⚠️ **用 `./data` 必须先授权，否则容器起不来**：
+⚠️ **With `./data` you must fix ownership first, or the container will not start:**
 
 ```bash
 mkdir -p data && sudo chown -R 1000:1000 data
 ```
 
-原因：容器里跑的是 uid 1000 的 `node`，而 docker 自动创建的宿主目录属于 `root:root`。
-挂载会**覆盖镜像里对 `/data` 的授权**，所以镜像层面修不了这件事。
-漏了这步的表现是容器反复重启，日志里刷 `SqliteError: unable to open database file`。
+The container runs as `node`, uid 1000. Docker creates host directories as `root:root`, and the
+bind mount **overrides the ownership baked into the image** — which is why this cannot be fixed
+at the image level. Skip it and you get a container stuck in a restart loop logging
+`SqliteError: unable to open database file`.
 
-### 4. 启动
+### Start
 
-**推荐一键脚本**，它会自动装 Docker、生成 `.env` 和随机口令、构建启动、跑健康检查，
-最后把访问地址和口令打在屏幕上：
+The one-shot script installs Docker, generates `.env` with a random password, builds, starts,
+health-checks, and prints the URL and password:
 
 ```bash
 cd /opt/life-workbench
 bash deploy/setup-server.sh
 ```
 
-端口被占了就换一个：`bash deploy/setup-server.sh --port 18080`
+Port taken? `bash deploy/setup-server.sh --port 18080`
 
-需要仓库自带的 Caddy 自动签证书才加 `--caddy`（**已有反代就不要加**）：
+Add `--caddy` only if you want the bundled Caddy to fetch certificates
+(**do not** if you already run a reverse proxy):
 
 ```bash
 bash deploy/setup-server.sh --caddy
 ```
 
-**想手动控制**就自己来：
+Or drive it manually:
 
 ```bash
-cp .env.example .env && vi .env    # 至少改 APP_PASSWORD
+cp .env.example .env && vi .env    # at minimum, set APP_PASSWORD
 docker compose up -d --build
 docker compose logs -f api
 ```
 
-看到 `[life-workbench] listening on 0.0.0.0:8080` 就是好了。
+You are up when you see `[life-workbench] listening on 0.0.0.0:8080`.
 
-### 5. 验证
+### Verify
 
 ```bash
 curl http://127.0.0.1:8080/api/health
 # {"ok":true,"service":"life-workbench","time":...}
 
-# 登录拿 token
+# log in for a token
 curl -s -X POST http://127.0.0.1:8080/api/login \
   -H 'Content-Type: application/json' \
-  -d '{"password":"你的口令"}'
+  -d '{"password":"YOUR_PASSWORD"}'
 
-# 用 token 读表
+# read tables with it
 curl -s http://127.0.0.1:8080/api/tables -H "Authorization: Bearer <token>"
 ```
 
-### 6. 放行端口
+### Open the port
 
-云控制台的安全组要放行 `HTTP_PORT`（默认 8080）。腾讯云轻量：**防火墙** → 添加规则 → TCP 8080。
+Open `HTTP_PORT` (default 8080) in your cloud firewall. On Tencent Cloud Lighthouse:
+**Firewall → Add rule → TCP 8080**.
 
-> 服务器本机能 `curl` 通、手机连不上，九成是安全组没放行。
-> 如果 `BIND_ADDR=127.0.0.1`（前面已有反代），这个端口**不用对公网放行**，
-> 只需放行你反代自己的 80 / 443。
+> If `curl` works on the server but your phone cannot connect, it is almost always the security
+> group. With `BIND_ADDR=127.0.0.1` you do **not** expose 8080 publicly — open 80/443 for your
+> own reverse proxy instead.
 
 ---
 
-## 二、接上你自己的反代
+## 2. Behind your own reverse proxy
 
-已经有 nginx / Traefik / 自己的 Caddy 的，按这三步接：
+Already running nginx / Traefik / your own Caddy? Three steps:
 
-1. `.env` 里设 `BIND_ADDR=127.0.0.1`，然后 `docker compose up -d --build`
-2. 反代上游指向 `http://127.0.0.1:8080`（反代在 docker 里则用 `http://life-workbench-api:8080`）
-3. 反代配置里记得带这两个头，否则日志里看不到真实来源 IP：
+1. Set `BIND_ADDR=127.0.0.1` in `.env`, then `docker compose up -d --build`
+2. Point the upstream at `http://127.0.0.1:8080` (`http://life-workbench-api:8080` if your proxy is containerised)
+3. Forward these headers, or logs lose the real client IP:
 
 ```nginx
 location / {
@@ -188,316 +204,214 @@ location / {
 }
 ```
 
-再把这个地址填进 `.env` 的 `PUBLIC_BASE_URL`（例 `https://life.example.com`），
-它就是手机要连的地址，也要同步填到 GitHub 仓库变量 `API_BASE` 用于出包。
+Then put that public address in `.env` → `PUBLIC_BASE_URL` (e.g. `https://life.example.com`) —
+it is what the phone connects to — and, if you want it baked into the APK, in the GitHub
+repository variable `API_BASE`.
 
-> 页面本身是单文件、零外部依赖，反代**不需要**额外配 WebSocket、缓存或压缩，
-> 普通 HTTP 转发即可。
+> The page is a single file with zero external dependencies; the proxy needs **no** WebSocket,
+> caching or compression rules. Plain HTTP forwarding is enough.
 
 ---
 
-## 三、构建 APK
+## 3. Build the APK
 
-**服务端地址不必在构建时写死了** —— App 装到手机上之后可以自己填、自己改
-（首次启动会引导，之后随时点右下角的齿轮按钮）。
+**The server address no longer has to be baked in at build time.** Once installed, the app lets
+you enter and change it — guided on first launch, then any time via the gear button.
 
-所以出包时地址是**可选**的：
+So supplying an address at build time is **optional**:
 
-| 你想怎样 | 怎么做 |
+| Goal | What to do |
 |---|---|
-| 一个包给所有人用，各自填自己的服务器 | 什么都不用配，直接构建 |
-| 给自己用，懒得每次填 | 配一个「内置默认地址」，用户填过的地址优先级更高 |
+| One APK for everyone, each person fills in their own server | nothing to configure — just build |
+| Your own APK, no retyping | configure a built-in default; a user-typed address always wins |
 
-内置地址形如：
+A built-in address looks like:
 
 ```
-http://你的服务器IP:端口      例：http://203.0.113.10:8080
-https://你的域名            例：https://life.example.com
+http://YOUR_SERVER_IP:PORT      e.g. http://203.0.113.10:8080
+https://your.domain             e.g. https://life.example.com
 ```
 
-> 仓库里的 `client/index.html` 是**已经构建好的成品**（资料库的绑定属性和表 id 都清理过了），
-> 出包时只需给它换一个内置地址，所以走 `build/inject_api_base.py`。
-> 只有在改了 `build/adapter.js` 之后才需要从原始页面完整重建
-> （`build/make_client.py`）——那要求你自备资料库导出的原始页面，
-> 源码库不收录它，因为它带着资料库的数据库 id。
+> `client/index.html` in this repo is the **pre-built artifact** (all bindings and table IDs
+> from the original page platform stripped out), so a build only has to swap the address —
+> which is what `build/inject_api_base.py` does. Only if you modified `build/adapter.js` do you
+> need a full rebuild via `build/make_client.py`; that requires the original exported page,
+> which this repo does not include because it carries platform database IDs.
 
-服务器那边自己的地址配置在 `.env` → `PUBLIC_BASE_URL`（只影响部署脚本打印的访问地址）。
-Actions 读不到服务器上的 `.env`，所以要内置的话在仓库 **Variables** → `API_BASE` 里填同一个值。
+Server-side, your own address lives in `.env` → `PUBLIC_BASE_URL` (it only affects the address
+the deploy script prints). Actions cannot read your `.env`, so to bake one in, set the same
+value in the repository **Variables** → `API_BASE`.
 
-### 方式 A：GitHub Actions（推荐）
+### Option A — GitHub Actions (recommended)
 
-本机不需要 JDK / Android SDK，push 到 GitHub 自动出包。
+No JDK or Android SDK needed locally; push and it builds.
 
-1. 把仓库推到你的 GitHub
-2. 打开仓库 → **Settings → Actions → General**，确认 Actions 是启用的
-3. （可选）内置默认地址：**Settings → Secrets and variables → Actions → Variables → New variable**
-   名称 `API_BASE`，值填你的服务器地址（例 `http://203.0.113.10:8080`）。
-   不配也能出包，装好后在 App 里填一次即可
-4. 推送代码，或到 **Actions → Build Android APK → Run workflow** 手动触发
-   （手动触发时也能在 `api_base` 输入框临时填一个地址，会覆盖变量）
-5. 跑完在 workflow 页面底部 **Artifacts** 下载 `life-workbench-apk-debug`
+1. Push the repo to your GitHub
+2. **Settings → Actions → General** — make sure Actions is enabled
+3. *(optional)* baked-in default: **Settings → Secrets and variables → Actions → Variables → New variable**, name `API_BASE`, value your server address (e.g. `http://203.0.113.10:8080`). Skipping this is fine — the user enters it once inside the app
+4. Push, or run **Actions → Build Android APK → Run workflow** manually (the `api_base` input overrides the variable for that run)
+5. Download `life-workbench-apk-debug` from **Artifacts** at the bottom of the run page
 
-> 工作流里的地址只出现在「构建时内置」这一步；公开仓库的日志会对它打码。
-> 没配地址也不会失败 —— 那种包里没有内置地址，首次打开会引导用户填写。
-> 自检失败（设置逻辑或页面静态检查不过）会直接停下，不会出一个坏包。
+> The address only appears in the "inject" step, and public-repo logs mask it.
+> A missing address is not an error — that APK simply prompts on first launch.
+> A failing self-check stops the build rather than shipping a broken package.
 
-> Android SDK 和 Gradle 依赖第一次要下几分钟，后续有缓存会快。
+> The first run downloads the Android SDK and Gradle dependencies (a few minutes); later runs hit the cache.
 
-### 方式 B：本地构建
+### Option B — local build
 
-需要 JDK 21 和 Android SDK（装 Android Studio 最省事）。
+Requires JDK 21 and the Android SDK (installing Android Studio is the easy way).
 
 ```bash
-# 不内置地址（装好后自己填）
+# no baked-in address (the user fills it in after installing)
 bash build/sync_mobile.sh
 
-# 或者内置一个默认地址
-bash build/sync_mobile.sh http://你的服务器IP:8080
+# or bake in a default
+bash build/sync_mobile.sh http://YOUR_SERVER_IP:8080
 
 cd mobile/android
 ./gradlew assembleDebug
 ```
 
-产物：`mobile/android/app/build/outputs/apk/debug/app-debug.apk`
+Output: `mobile/android/app/build/outputs/apk/debug/app-debug.apk`
 
-Windows 上在 Git Bash 里跑同样的命令。
+On Windows, run the same commands in Git Bash.
 
 ---
 
-## 四、装到手机
+## 4. Install on your phone
 
-1. 把 `app-debug.apk` 传到手机（微信/QQ 传给自己、或用 `adb install`）
-2. 点开安装，系统提示「未知来源应用」时允许一次
-3. 打开 App：
-   - **包里内置过地址** → 直接输入 `.env` 里的 `APP_PASSWORD` 就能用
-   - **没内置地址** → 会先弹出服务器设置，填 `http://服务器IP:端口`，
-     点「测试连接」确认通了，再填口令保存
-4. 之后每次打开都是全屏、无地址栏，数据自动同步
+1. Copy `app-debug.apk` to the phone (send it to yourself, or use `adb install`)
+2. Tap to install; allow "install from unknown sources" once
+3. Open the app:
+   - **address was baked in** → just enter the `APP_PASSWORD` from `.env`
+   - **no baked-in address** → the settings panel appears first; enter `http://YOUR_SERVER_IP:PORT`,
+     tap **Test connection** to confirm it is reachable, then save with your password
+4. From then on it opens full-screen with no address bar, syncing automatically
 
 ```bash
-# 有 adb 的话更省事
+# easier with adb
 adb install -r app-debug.apk
 ```
 
 ---
 
-## 五、换服务器地址
+## 5. Changing the server address
 
-装好之后**在 App 里就能改，不用重新打包**：
+Available **inside the app — no rebuild required**:
 
-1. 点右下角的齿轮按钮（在「中文 / EN」开关上方）打开服务器设置
-2. 改「服务器地址」→ 建议先点「测试连接」确认服务端在跑
-3. 填「访问口令」→ 点「保存并连接」
+1. Tap the gear button at the bottom-right (above the 中文 / EN switch) to open server settings
+2. Edit **Server address** — tapping **Test connection** first is recommended
+3. Enter the **password**, then tap **Save and connect**
 
-面板里还能看到当前地址、在线/本地模式、待同步条数，以及「清除本机口令」和
-「填回内置默认地址」两个操作。
+The panel also shows the current address, online/local mode and pending-sync count, plus
+**clear local password** and **restore built-in default**.
 
-面板底部还有一块**数据维护**：内置示例数据没清干净时会出现「清空示例数据（N 条）」。
-这个入口原本是页面顶部那颗垃圾桶按钮 —— 手机上又小又容易误触，就收进设置里了。
-它只删内置的示例记录 / 示例打卡 / 示例收藏，你自己录入的内容一律不动。
+At the bottom there is a **Data maintenance** section: while sample data is still present it
+offers **Clear sample data (N)**. That entry used to be a trash-can button in the page header —
+too small and too easy to hit by accident on a phone, so it moved into settings. It only
+deletes the bundled sample records / check-ins / bookmarks; anything you entered yourself is
+untouched.
 
-几个行为上的细节：
+Behaviours worth knowing:
 
-- 地址容错：只填 IP 或 `IP:端口` 会自动补 `http://`；结尾带不带 `/` 或 `/api` 都认
-- **换到另一台服务器**：本机口令会清掉（旧服务器签发的 token 在新服务器上无效），
-  需要重新登录；上一台服务器的本地缓存也会清掉，避免显示错的数据
-- **离线队列不会丢**：还没同步到服务器的改动会保留，登录后自动补传
-- 同一个地址重复保存不会清口令
+- **Address tolerance** — a bare host or `host:port` gets `http://` prepended; a trailing `/` or `/api` is accepted
+- **Switching to another server** clears the local password (tokens issued by the old server are invalid anyway) and the cached records pulled from that server, so you never see stale data
+- **The offline queue survives** — edits not yet synced are kept and flushed automatically after you log in
+- **Re-saving the same address** does not clear your password
 
-命令行 / 远程调试时也可以直接改（手机连电脑开 `chrome://inspect`，在 Console 里；
-注意包里 `webContentsDebuggingEnabled` 默认是 `false`，要调试得先把它改成 `true` 重新打包）：
+Over remote debugging (open `chrome://inspect` from your computer) you can also drive it from
+the Console — note `webContentsDebuggingEnabled` defaults to `false` in
+`mobile/capacitor.config.json`, so set it to `true` and rebuild if you need this:
 
 ```js
-lw.settings()                    // 打开设置面板
-lw.base('http://新地址:8080')     // 直接改地址并持久化
-lw.base()                        // 读当前地址
-lw.probe('http://新地址:8080')    // 探活
-lw.state()                       // 看状态（地址/在线/待同步条数）
-lw.login()                       // 重新弹登录框
+lw.settings()                     // open the settings panel
+lw.base('http://NEW_ADDR:8080')   // set + persist the address
+lw.base()                         // read the current address
+lw.probe('http://NEW_ADDR:8080')  // health check
+lw.state()                        // address / online / pending count
+lw.login()                        // re-open the login prompt
 ```
 
-**出厂内置地址**想改的话：改 GitHub 仓库变量 `API_BASE`（和服务端 `.env` 的
-`PUBLIC_BASE_URL`），重新构建装新包 —— 但只有在用户没自己填过地址时才生效。
+To change the **factory default**: update the GitHub variable `API_BASE` (and `PUBLIC_BASE_URL`
+in the server `.env`) and rebuild — it only applies to users who never typed an address.
 
 ---
 
-## 六、升级域名 + HTTPS
+## Troubleshooting
 
-明文 HTTP 能用，但有两个代价：Android 上要放开明文流量（已在补丁里处理），
-以及部分网络环境下会被中间设备干扰。有域名就走 HTTPS。
+**Container restart loop, log full of `SqliteError: unable to open database file`**
 
-**已经有反代的**：直接在你自己那套里加一个站点指向 `http://127.0.0.1:8080`
-（见第二节），证书用你现有的方式签，不用动这个仓库。
-
-**没有反代的**：用仓库自带的 Caddy，自动申请并续期 Let's Encrypt 证书。
-
-1. 域名 A 记录指向服务器公网 IP
-2. `.env` 里填 `DOMAIN=life.example.com`，建议连 `ACME_EMAIL=you@example.com` 一起填
-3. 启动时叠加 Caddy 文件：
+The database file cannot be written. Nine times out of ten the host directory has the wrong owner:
 
 ```bash
-docker compose -f docker-compose.yml -f deploy/docker-compose.caddy.yml up -d --build
+ls -ldn data            # check uid/gid — the container runs as uid 1000
 ```
-
-脚本也一样，加 `--caddy` 即可，它会自动把 `BIND_ADDR` 收到 `127.0.0.1`：
 
 ```bash
-bash deploy/setup-server.sh --caddy
-```
-
-之后把 APK 的地址改成 `https://life.example.com` 重新构建即可。
-
-> Caddy 要占 80 / 443，本机已有反代就不要用这个文件，会端口冲突。
-> 轻量服务器广州节点绑域名走 80/443 需要备案；香港 / 首尔不用。
-
----
-
-## 七、备份与恢复
-
-数据就是一个 SQLite 文件（外加 WAL 的 `-wal` / `-shm` 两个附属文件），
-容器里的路径固定是 `/data/workbench.db`，只是物理位置随 `DATA_VOLUME` 变。
-
-**通用备份（两种模式都行，容器跑着也能拷）**
-
-```bash
-docker compose cp api:/data/workbench.db ~/workbench-$(date +%F).db
-```
-
-**`DATA_VOLUME` 留空（docker 卷）** —— 想直接摸到文件，去卷的挂载点：
-
-```bash
-sudo ls /var/lib/docker/volumes/life-workbench_lw-data/_data/
-```
-
-**`DATA_VOLUME=./data`（宿主目录）** —— 最直观，直接拷：
-
-```bash
-cp data/workbench.db ~/workbench-$(date +%F).db
-```
-
-恢复都是塞回去再重启：
-
-```bash
-docker compose cp ~/workbench-2026-09-29.db api:/data/workbench.db
-docker compose exec api sh -c 'rm -f /data/workbench.db-wal /data/workbench.db-shm'
-docker compose restart api
-```
-
-> 恢复前把那两个 WAL 附属文件清掉，否则可能读到旧内容。
-> 换成自己的备份文件名再执行。
-
-建议加个 crontab 每天拷一份：
-
-```cron
-0 4 * * * cd /opt/life-workbench && docker compose cp api:/data/workbench.db /root/backups/workbench-$(date +\%F).db
-```
-
----
-
-## 八、接口速查
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/api/health` | 健康检查，免认证 |
-| POST | `/api/login` | `{"password":"..."}` → `{token}` |
-| GET | `/api/tables` | 六张表的清单和条数 |
-| GET | `/api/t/:table` | 读表，支持 `?limit=&offset=` |
-| POST | `/api/t/:table` | 新增，body `{"properties":{...}}` → `{record_id}` |
-| PATCH | `/api/t/:table/:id` | 改，body `{"properties":{...}}`（只带变更字段） |
-| DELETE | `/api/t/:table/:id` | 删 |
-| POST | `/api/t/:table/import` | 批量导入，body `{"rows":[{...}]}` |
-| POST | `/api/t/:table/clear` | 清空该表，body `{"confirm":true}` |
-
-除 `/api/health` 和 `/api/login` 外都要带 `Authorization: Bearer <token>`。
-
-字段名沿用中文（`日期`、`金额`、`分类` …），存储层是 JSON，加字段不用改表结构。
-
----
-
-## 九、常见问题
-
-**容器反复重启，日志刷 `SqliteError: unable to open database file`**
-
-数据库文件写不进去。九成是**宿主目录属主不对**：
-
-```bash
-ls -ldn data            # 看 uid/gid，容器里跑的是 uid 1000
-```
-
-容器里是 uid 1000 的 `node`，而 docker 自动创建的宿主目录属于 `root:root`（`uid=0`）→
-建不了 `workbench.db`，连 WAL 的 `-wal` / `-shm` 也建不出来。
-
-挂载会**覆盖镜像里对 `/data` 的授权**，所以在 Dockerfile 里 `chown` 是没用的，
-只能在宿主机这一侧解决。两个办法：
-
-```bash
-# A. 最快：把宿主目录让给 uid 1000
+# A. quickest — hand the host directory to uid 1000
 sudo chown -R 1000:1000 ./data && docker compose restart api
 
-# B. 推荐：改用 docker 卷，权限随镜像走，永远不会踩这个坑
-#    把 .env 里的 DATA_VOLUME 留空（或整行删掉），然后：
+# B. recommended — switch to a Docker volume and never hit this again
+#    clear DATA_VOLUME in .env (or delete the line), then:
 docker compose up -d
 ```
 
-> 换成卷之后，之前那个 root 属主的 `data/` 目录就没用了：`sudo rm -rf data`
-> （确认里面没有你要留的数据库文件再删）。
+> The old root-owned `data/` directory is then dead weight: `sudo rm -rf data`
+> (check it holds no database file you want to keep first).
 
-新版本的日志会把目录属主、进程身份和这三条解法直接打出来，照着做即可。
+Newer builds print the directory owner, the process identity and these two fixes straight into
+the log.
 
-**`docker compose up` 报 `required variable DOMAIN is missing a value`**
+**`docker compose up` fails with `required variable DOMAIN is missing a value`**
 
-说明你跑的是旧版代码——Caddy 还在主文件里。这个报错**跟要不要用 Caddy 无关**：
-Docker Compose 是先对整份文件做变量插值、之后才判断服务启不启动，
-所以 `${DOMAIN:?...}` 这种「必需变量」写法只要出现在文件里，
-哪怕 Caddy 的 profile 没激活，命令也会直接失败。
-
-现在的 `docker-compose.yml` 已经不含 Caddy，拉最新代码即可：
+You are on an old revision where Caddy was still in the main compose file. The error has
+nothing to do with whether you use Caddy: Docker Compose interpolates the **whole file** before
+deciding which services to start, so a `${DOMAIN:?...}` required-variable expression fails the
+command even when the Caddy profile is inactive. The current `docker-compose.yml` contains no
+Caddy — just pull:
 
 ```bash
 git pull
 docker compose up -d --build
 ```
 
-**我已经有自己的反代，怎么接**
+**Phone cannot reach the server**
 
-`.env` 里设 `BIND_ADDR=127.0.0.1`，反代上游指向 `http://127.0.0.1:8080`。
-详见第二节。
+In the app: gear button → settings → **Test connection**; it tells you which step failed
+(unreachable / timed out / what the server returned). Then check in order:
+① `curl 127.0.0.1:PORT/api/health` on the server → ② cloud firewall / security group →
+③ `docker compose logs api` → ④ open `http://IP:PORT/api/health` in the phone's browser.
 
-**手机连不上服务器**
-先在 App 里点右下角齿轮 → 设置面板 → 点「测试连接」，它会直接告诉你卡在哪一步
-（连不上/超时/服务端返回了什么）。再按顺序查：① 服务端 `curl 127.0.0.1:端口/api/health`
-通不通 → ② 云控制台安全组放行没有 → ③ `docker compose logs api` 有没有报错
-→ ④ 手机浏览器直接开 `http://IP:端口/api/health` 看有没有响应。
+**Changed the address, or moved to another server**
 
-**改了服务器地址 / 换了台服务器**
-不用重装 App：右下角齿轮 → 改地址 → 保存并连接。详见第五节。
-（换服务器后要重新输口令，这是正常的 —— 旧服务器签发的 token 在新服务器上无效。）
+No reinstall needed: gear button → edit the address → save and connect. Re-entering the
+password afterwards is expected — tokens issued by the old server are invalid on the new one.
 
-**地址填对了还是连不上**
-检查地址是不是写全了端口（`http://IP:8080`，不是 `http://IP`）；
-如果是 https，证书必须是**受信任的** —— 自签证书 WebView 会直接拒绝，
-用 http 或者换成受信任的证书。
+**Correct address, still failing**
 
-**找不到「清空示例」了**
-它收进设置面板了：右下角齿轮 → 面板底部「数据维护」→ 清空示例数据。
-只在还有示例数据时出现，清空后那里会变成「示例数据已经清空」。
-（原先是页面顶部的一颗垃圾桶按钮，手机上太小容易误触，已移除。）
+Make sure the port is included (`http://IP:8080`, not `http://IP`). For HTTPS the certificate
+must be **trusted** — self-signed certificates are rejected outright by the WebView; use HTTP or
+a trusted certificate.
 
-**App 打开白屏**
-多半是还没配服务器地址、或者没输口令。新版首次打开会自动弹设置面板引导填写；
-填过之后如果还白，下拉刷新会重新弹登录框，不行就杀掉 App 重开。
-调试可以连电脑看 `chrome://inspect` 的 Console（需要先把
-`mobile/capacitor.config.json` 里的 `webContentsDebuggingEnabled` 改成 `true` 重新打包）。
+**Blank screen on open**
 
-**改成新口令后 App 进不去**
-token 是从口令派生的，改 `APP_PASSWORD` 会让所有旧 token 失效，
-App 里重新输一次新口令即可。
+Usually no server address configured, or no password entered. New builds prompt with the
+settings panel on first launch; if it still stays blank, pull-to-refresh re-opens the login
+prompt, otherwise kill the app and reopen. Debug via `chrome://inspect` (see section 5).
 
-**数据写到一半断网了怎么办**
-前端有离线队列：写失败的操作会暂存在手机上，联网后（或每 20 秒自动重试）补传，
-补传成功会弹一句「离线期间的改动已全部同步」。
+**Changed `APP_PASSWORD` and now the app will not get in**
 
-**想清空某张表**
+Tokens are derived from the password, so changing it invalidates every existing token. Just
+re-enter the new password in the app.
+
+**Wrote data while offline**
+
+There is an offline queue: failed writes are kept on the phone and replayed once the network
+returns (or every 20 seconds). A successful flush reports "offline changes synced".
+
+**Want to empty a table**
+
 ```bash
 curl -X POST http://127.0.0.1:8080/api/t/money/clear \
   -H "Authorization: Bearer <token>" \
@@ -505,88 +419,22 @@ curl -X POST http://127.0.0.1:8080/api/t/money/clear \
   -d '{"confirm":true}'
 ```
 
-**怎么从之前的资料库版本迁数据过来**
-先 `POST /api/t/:table/import`，body 里放 `{"rows":[{...拍平的字段...}]}`。
-字段名和资料库版一致，直接导。
+**Migrating data from the original page-platform version**
+
+Use `POST /api/t/:table/import` with `{"rows":[{...flattened fields...}]}`. Property names
+match, so you can import as-is.
 
 ---
 
-## 本地自检
+## Security notes
 
-改完配置或前端之后，不用起 Docker 也能先验一遍：
-
-```bash
-node build/test_settings.js       # 设置面板逻辑（108 项：地址容错、换服务器清态、探活、面板 DOM、清空示例、齿轮）
-python3 build/check_client.py     # 客户端产物：语法、外链、宿主残留
-python3 build/check_compose.py    # compose 结构与变量（需 pyyaml）
-
-# 服务器地址设置的端到端（32 项，脚本自己拉一个临时服务端起来，跑完关掉）
-node build/test_settings_e2e.js
-
-# 服务端接口端到端（33 项，要自己先起服务端）
-cd server && node src/index.js &
-python3 build/smoke_test.py
-```
-
-`test_settings.js` / `test_settings_e2e.js` 用最小 DOM stub 把 `build/adapter.js`
-直接跑在 Node 里（脚手架见 `build/_harness.js`），不需要浏览器或真机 ——
-本机没安卓环境时也能验「App 内改服务器地址」这条链路。
-`test_settings_e2e.js` 会真起一个服务端，把「填地址 → 测试连接 → 保存 → 拉到数据」
-整条路走通，包括口令填错、地址填错这些岔路。
-
-`check_compose.py` 会模拟 Compose 的变量插值并校验 YAML 层级 ——
-本地没装 Docker 时 `docker compose config` 跑不了，它顶这个位。
-
-`test_settings.js` 和 `check_client.py` 已经在 Actions 里当门禁，
-之后改前端跑一遍就行（`test_settings_e2e.js` 需要 server 依赖，没进 CI）。
+- Never commit `.env` to a public repo (it is already in `.gitignore`)
+- Single-user password auth — fine for personal use; multi-user would need a real account system
+- Set `APP_SECRET` to a sufficiently long random string, not the sample value
 
 ---
 
-## 项目结构
+## Full documentation
 
-```
-life-workbench/
-├─ server/                 后端服务
-│  ├─ Dockerfile
-│  ├─ package.json
-│  └─ src/
-│     ├─ index.js          路由 + 启动
-│     ├─ db.js             SQLite 建表与读写
-│     ├─ tables.js         六张表的定义 + 属性拍平
-│     └─ auth.js           口令认证
-├─ client/                 前端页面
-│  ├─ index.html           构建产物（由 build/make_client.py 生成）
-│  ├─ manifest.webmanifest
-│  └─ icon*.svg
-├─ build/                  构建与自检脚本
-│  ├─ adapter.js           替换掉原资料库 SDK 的 API 适配器（含服务器地址设置面板）
-│  ├─ make_client.py       从原始页面完整生成 client/index.html（重建用；含页面功能补丁）
-│  ├─ inject_api_base.py   给成品页面注入内置默认地址（日常构建走这个，可留空）
-│  ├─ sync_mobile.sh       一键生成安卓工程
-│  ├─ patch_android.py     给安卓工程打明文流量补丁
-│  ├─ check_client.py      客户端产物静态自检
-│  ├─ _harness.js          测试脚手架（最小 DOM / localStorage / vm 装载器）
-│  ├─ test_settings.js     服务器地址设置逻辑离线自测（不需要浏览器/真机/服务端）
-│  ├─ test_settings_e2e.js 同一套逻辑的端到端自测（自己起临时服务端）
-│  ├─ check_compose.py     compose 结构与变量自检（本地没 docker 时顶替 compose config）
-│  └─ smoke_test.py        服务端端到端冒烟测试
-├─ mobile/                 Capacitor 壳
-│  ├─ package.json
-│  ├─ capacitor.config.json
-│  └─ android/             （自动生成，不入库）
-├─ deploy/
-│  ├─ Caddyfile                    可选：自动 HTTPS（配下面那个文件用）
-│  ├─ docker-compose.caddy.yml     可选：Caddy 服务定义，不需要就别管
-│  └─ setup-server.sh              服务器端一键安装（--caddy 才启用 Caddy）
-├─ docker-compose.yml
-├─ .env.example
-└─ .github/workflows/build-apk.yml
-```
-
----
-
-## 安全提醒
-
-- `.env` 别提交到公开仓库（已在 `.gitignore` 里）
-- 单用户口令认证，够个人用；要多人共用得另做账号体系
-- 建议把 `APP_SECRET` 设成足够长的随机串，别用示例值
+**[README.zh-CN.md](README.zh-CN.md)** (Chinese) — HTTPS and domain upgrade, backup & restore,
+API reference, local self-checks, the complete project layout, and the long-form FAQ.

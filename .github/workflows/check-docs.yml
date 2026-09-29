@@ -1,0 +1,31 @@
+name: Check Docs
+
+# 双语文档（README.md 英文 / README.zh-CN.md 中文）分头维护，
+# 最大的风险是只改了一份。这个流水线只跑文档检查，秒级完成，
+# 不牵动 Android 构建 —— 所以改一个错别字也不会白跑几分钟的 Gradle。
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - '*.md'
+      - 'build/check_docs.py'
+      - '.github/workflows/check-docs.yml'
+  pull_request:
+    paths:
+      - '*.md'
+      - 'build/check_docs.py'
+      - '.github/workflows/check-docs.yml'
+  workflow_dispatch:
+
+jobs:
+  docs:
+    name: README 双语文档自检
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      # 只用标准库，不需要 setup-python，用 runner 自带的 python3 就行
+      - name: 检查两份 README
+        run: python3 build/check_docs.py
