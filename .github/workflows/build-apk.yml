@@ -140,18 +140,24 @@ jobs:
           npx cap sync android
 
       # 安卓工程是现场生成的（.gitignore 忽略），签名密钥也得在此时放进去。
-      # Secret 存的是 base64 的 PKCS12 私钥。没配置就直接失败 ——
-      # 不能让流水线退回「Gradle 现场随机生成密钥」，那种包一个都盖不上旧版本。
       #
-      # ⚠️ secret 必须**内联在 run 里**，不要写成 step 级的 `env:` ——
-      #    那样整个 workflow 在启动阶段就挂（startup_failure，1 秒结束、连日志都没有）。
-      #    2026-09-29 用探针实测确认：`env:` + `${{ secrets.* }}` → startup_failure，
-      #    内联到 run 里 → 正常。
+      # ⚠️ 这个密钥存在仓库**变量**（vars）里，不是 secret。原因是实测出来的：
+      #    在本仓库引用一个「存在的」secret 会让 workflow 直接 startup_failure
+      #    （1 秒结束、无任何日志），改成 vars 走另一条管道就正常。
+      #    2026-09-29 探针结论：
+      #      引用不存在的 secret            -> 正常（说明语法/上下文没问题）
+      #      引用 12 字节的小 secret        -> 正常
+      #      引用 3568 字符的密钥 secret    -> startup_failure
+      #      同一份值放进 vars 再引用       -> 正常 ← 现在用的就是这条
+      #    即问题出在「大值 secret 参与启动阶段处理」，与写法无关（内联/ env 都试过）。
+      #
+      # 因为是明文变量，脚本里**绝不 echo 密钥内容**，只报文件大小；
+      # 另外注意：fork 来的 PR 也能读到 vars，所以别把这里当保险箱。
       - name: 还原签名密钥
         run: |
-          KS="${{ secrets.LW_DEBUG_KEYSTORE }}"
+          KS="${{ vars.LW_DEBUG_KEYSTORE }}"
           if [ -z "$KS" ]; then
-            echo "::error::缺少 Secret LW_DEBUG_KEYSTORE：没有固定签名，打出来的包会装不上旧版本。请按 README「固定签名」一节生成密钥并配置 Secret。"
+            echo "::error::缺少仓库变量 LW_DEBUG_KEYSTORE：没有固定签名，打出来的包会装不上旧版本。配置见 README「固定签名」一节。"
             exit 1
           fi
           echo "$KS" | base64 -d > mobile/android/app/lw-debug.p12
