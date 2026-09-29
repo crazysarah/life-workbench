@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-给已构建好的 client/index.html 注入服务端地址，产出 mobile/www/index.html。
+给已构建好的 client/index.html 注入「内置默认服务端地址」，产出 mobile/www/index.html。
 
-为什么需要这一步：APK 里的前端是内嵌的，服务端地址必须在构建时写进去。
+地址是可选的：装好 App 之后用户可以在设置面板里自己填、自己改（存在本机，优先级更高）。
+这里注入的只是「没填过时用哪个」的默认值，所以留空也完全可以出包。
+
 仓库里放的是成品 client/index.html（已不含任何资料库残留），
 所以构建时只需换掉 apiBase 这一个值，不必重新从原始页面生成。
 
@@ -12,8 +14,8 @@
 （源码库不收录它，因为它带着资料库的数据库 id）。
 
 用法：
-    python build/inject_api_base.py --api-base http://203.0.113.10:8080
-    python build/inject_api_base.py --api-base ""     # 同源模式（浏览器直接开服务器地址）
+    python build/inject_api_base.py --api-base http://203.0.113.10:8080   # 内置一个默认地址
+    python build/inject_api_base.py --api-base ""                         # 不内置（推荐）
 """
 
 import argparse
@@ -35,7 +37,8 @@ PATTERN = re.compile(r'(window\.__LW_CONFIG__\s*=\s*\{\s*apiBase:\s*)"[^"]*"')
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--api-base', default='',
-                    help='服务端地址，如 http://203.0.113.10:8080（换成你自己的）；留空表示同源')
+                    help='内置默认服务端地址，如 http://203.0.113.10:8080；'
+                         '留空表示不内置（用户装好后在 App 里自己填）')
     ap.add_argument('--src', default=SRC)
     ap.add_argument('--out', default=OUT)
     args = ap.parse_args()

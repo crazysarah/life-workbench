@@ -7,6 +7,7 @@
 - 前端：单文件页面（约 190 KB，零外部依赖），数据层指向自建 API
 - 后端：Node 22 + Express + SQLite，单容器，数据卷持久化
 - 客户端：Capacitor 7 套壳成安卓 APK，前端内嵌在包里（断网也能开界面）
+- 服务器地址：**装完在 App 里就能填 / 能改**（右下角齿轮），不用为了换地址重新打包
 - 部署：`docker compose up -d --build` 一条命令
 - 出包：GitHub Actions 云端构建 APK，本机不需要装 Android SDK
 
@@ -197,7 +198,17 @@ location / {
 
 ## 三、构建 APK
 
-APK 里的前端是**内嵌**的，服务端地址在构建时写进去。所以出包前先确定地址：
+**服务端地址不必在构建时写死了** —— App 装到手机上之后可以自己填、自己改
+（首次启动会引导，之后随时点右下角的齿轮按钮）。
+
+所以出包时地址是**可选**的：
+
+| 你想怎样 | 怎么做 |
+|---|---|
+| 一个包给所有人用，各自填自己的服务器 | 什么都不用配，直接构建 |
+| 给自己用，懒得每次填 | 配一个「内置默认地址」，用户填过的地址优先级更高 |
+
+内置地址形如：
 
 ```
 http://你的服务器IP:端口      例：http://203.0.113.10:8080
@@ -205,17 +216,13 @@ https://你的域名            例：https://life.example.com
 ```
 
 > 仓库里的 `client/index.html` 是**已经构建好的成品**（资料库的绑定属性和表 id 都清理过了），
-> 出包时只需给它换一个服务端地址，所以走 `build/inject_api_base.py`。
+> 出包时只需给它换一个内置地址，所以走 `build/inject_api_base.py`。
 > 只有在改了 `build/adapter.js` 之后才需要从原始页面完整重建
 > （`build/make_client.py`）——那要求你自备资料库导出的原始页面，
 > 源码库不收录它，因为它带着资料库的数据库 id。
 
-这个地址**不在代码里**，靠两处配置提供（两处填同一个值）：
-
-| 用在哪 | 配在哪 |
-|---|---|
-| 服务端部署（脚本打印访问地址） | 服务器上的 `.env` → `PUBLIC_BASE_URL` |
-| 构建 APK（Actions 读不到 `.env`） | GitHub 仓库 **Variables** → `API_BASE` |
+服务器那边自己的地址配置在 `.env` → `PUBLIC_BASE_URL`（只影响部署脚本打印的访问地址）。
+Actions 读不到服务器上的 `.env`，所以要内置的话在仓库 **Variables** → `API_BASE` 里填同一个值。
 
 ### 方式 A：GitHub Actions（推荐）
 
@@ -223,13 +230,16 @@ https://你的域名            例：https://life.example.com
 
 1. 把仓库推到你的 GitHub
 2. 打开仓库 → **Settings → Actions → General**，确认 Actions 是启用的
-3. 配地址：**Settings → Secrets and variables → Actions → Variables → New variable**
-   名称 `API_BASE`，值填你的服务器地址（例 `http://203.0.113.10:8080`）
+3. （可选）内置默认地址：**Settings → Secrets and variables → Actions → Variables → New variable**
+   名称 `API_BASE`，值填你的服务器地址（例 `http://203.0.113.10:8080`）。
+   不配也能出包，装好后在 App 里填一次即可
 4. 推送代码，或到 **Actions → Build Android APK → Run workflow** 手动触发
    （手动触发时也能在 `api_base` 输入框临时填一个地址，会覆盖变量）
 5. 跑完在 workflow 页面底部 **Artifacts** 下载 `life-workbench-apk-debug`
 
-> 没配 `API_BASE` 又没在触发时填地址，构建会**直接报错停下**并提示去哪配，不会闷头出一个连不上的包。
+> 工作流里的地址只出现在「构建时内置」这一步；公开仓库的日志会对它打码。
+> 没配地址也不会失败 —— 那种包里没有内置地址，首次打开会引导用户填写。
+> 自检失败（设置逻辑或页面静态检查不过）会直接停下，不会出一个坏包。
 
 > Android SDK 和 Gradle 依赖第一次要下几分钟，后续有缓存会快。
 
@@ -238,7 +248,10 @@ https://你的域名            例：https://life.example.com
 需要 JDK 21 和 Android SDK（装 Android Studio 最省事）。
 
 ```bash
-# 一键：生成页面 → 拷资源 → 装 Capacitor → 建安卓工程 → 打补丁
+# 不内置地址（装好后自己填）
+bash build/sync_mobile.sh
+
+# 或者内置一个默认地址
 bash build/sync_mobile.sh http://你的服务器IP:8080
 
 cd mobile/android
@@ -255,9 +268,11 @@ Windows 上在 Git Bash 里跑同样的命令。
 
 1. 把 `app-debug.apk` 传到手机（微信/QQ 传给自己、或用 `adb install`）
 2. 点开安装，系统提示「未知来源应用」时允许一次
-3. 打开 App → 输入 `.env` 里的 `APP_PASSWORD` → 连上就能用了
-
-之后每次打开都是全屏、无地址栏，数据自动同步。
+3. 打开 App：
+   - **包里内置过地址** → 直接输入 `.env` 里的 `APP_PASSWORD` 就能用
+   - **没内置地址** → 会先弹出服务器设置，填 `http://服务器IP:端口`，
+     点「测试连接」确认通了，再填口令保存
+4. 之后每次打开都是全屏、无地址栏，数据自动同步
 
 ```bash
 # 有 adb 的话更省事
@@ -268,19 +283,37 @@ adb install -r app-debug.apk
 
 ## 五、换服务器地址
 
-APK 里的地址是构建时写进去的。两种改法：
+装好之后**在 App 里就能改，不用重新打包**：
 
-**服务器 IP 变了**：改 GitHub 仓库变量 `API_BASE`（和服务器 `.env` 的 `PUBLIC_BASE_URL`），
-重新触发一次构建，装新的 APK。
+1. 点右下角的齿轮按钮（在「中文 / EN」开关上方）打开服务器设置
+2. 改「服务器地址」→ 建议先点「测试连接」确认服务端在跑
+3. 填「访问口令」→ 点「保存并连接」
 
-**只是想临时试另一个地址**：App 里连不上时，可以用手机连电脑调试（`chrome://inspect`），
-在 Console 里执行：
+面板里还能看到当前地址、在线/本地模式、待同步条数，以及「清除本机口令」和
+「填回内置默认地址」两个操作。
+
+几个行为上的细节：
+
+- 地址容错：只填 IP 或 `IP:端口` 会自动补 `http://`；结尾带不带 `/` 或 `/api` 都认
+- **换到另一台服务器**：本机口令会清掉（旧服务器签发的 token 在新服务器上无效），
+  需要重新登录；上一台服务器的本地缓存也会清掉，避免显示错的数据
+- **离线队列不会丢**：还没同步到服务器的改动会保留，登录后自动补传
+- 同一个地址重复保存不会清口令
+
+命令行 / 远程调试时也可以直接改（手机连电脑开 `chrome://inspect`，在 Console 里；
+注意包里 `webContentsDebuggingEnabled` 默认是 `false`，要调试得先把它改成 `true` 重新打包）：
 
 ```js
-lw.base('http://新地址:8080')   // 改地址并持久化
-lw.state()                      // 看当前状态
-lw.login()                      // 重新弹登录框
+lw.settings()                    // 打开设置面板
+lw.base('http://新地址:8080')     // 直接改地址并持久化
+lw.base()                        // 读当前地址
+lw.probe('http://新地址:8080')    // 探活
+lw.state()                       // 看状态（地址/在线/待同步条数）
+lw.login()                       // 重新弹登录框
 ```
+
+**出厂内置地址**想改的话：改 GitHub 仓库变量 `API_BASE`（和服务端 `.env` 的
+`PUBLIC_BASE_URL`），重新构建装新包 —— 但只有在用户没自己填过地址时才生效。
 
 ---
 
@@ -427,12 +460,25 @@ docker compose up -d --build
 详见第二节。
 
 **手机连不上服务器**
-按顺序查：① 服务端 `curl 127.0.0.1:端口/api/health` 通不通 → ② 云控制台安全组放行没有
-→ ③ `docker compose logs api` 有没有报错 → ④ 手机浏览器直接开 `http://IP:端口/api/health` 看有没有响应。
+先在 App 里点右下角齿轮 → 设置面板 → 点「测试连接」，它会直接告诉你卡在哪一步
+（连不上/超时/服务端返回了什么）。再按顺序查：① 服务端 `curl 127.0.0.1:端口/api/health`
+通不通 → ② 云控制台安全组放行没有 → ③ `docker compose logs api` 有没有报错
+→ ④ 手机浏览器直接开 `http://IP:端口/api/health` 看有没有响应。
+
+**改了服务器地址 / 换了台服务器**
+不用重装 App：右下角齿轮 → 改地址 → 保存并连接。详见第五节。
+（换服务器后要重新输口令，这是正常的 —— 旧服务器签发的 token 在新服务器上无效。）
+
+**地址填对了还是连不上**
+检查地址是不是写全了端口（`http://IP:8080`，不是 `http://IP`）；
+如果是 https，证书必须是**受信任的** —— 自签证书 WebView 会直接拒绝，
+用 http 或者换成受信任的证书。
 
 **App 打开白屏**
-多半是口令没输或输错。下拉刷新一般会重新弹登录框；不行就杀掉重开。
-调试可以连电脑看 `chrome://inspect` 的 Console。
+多半是还没配服务器地址、或者没输口令。新版首次打开会自动弹设置面板引导填写；
+填过之后如果还白，下拉刷新会重新弹登录框，不行就杀掉 App 重开。
+调试可以连电脑看 `chrome://inspect` 的 Console（需要先把
+`mobile/capacitor.config.json` 里的 `webContentsDebuggingEnabled` 改成 `true` 重新打包）。
 
 **改成新口令后 App 进不去**
 token 是从口令派生的，改 `APP_PASSWORD` 会让所有旧 token 失效，
@@ -461,16 +507,29 @@ curl -X POST http://127.0.0.1:8080/api/t/money/clear \
 改完配置或前端之后，不用起 Docker 也能先验一遍：
 
 ```bash
-python3 build/check_compose.py    # compose 结构与变量（需 pyyaml）
+node build/test_settings.js       # 服务器地址设置逻辑（90 项：容错、换服务器清态、探活、面板 DOM）
 python3 build/check_client.py     # 客户端产物：语法、外链、宿主残留
+python3 build/check_compose.py    # compose 结构与变量（需 pyyaml）
 
-# 服务端端到端（33 项）
+# 服务器地址设置的端到端（32 项，脚本自己拉一个临时服务端起来，跑完关掉）
+node build/test_settings_e2e.js
+
+# 服务端接口端到端（33 项，要自己先起服务端）
 cd server && node src/index.js &
 python3 build/smoke_test.py
 ```
 
+`test_settings.js` / `test_settings_e2e.js` 用最小 DOM stub 把 `build/adapter.js`
+直接跑在 Node 里（脚手架见 `build/_harness.js`），不需要浏览器或真机 ——
+本机没安卓环境时也能验「App 内改服务器地址」这条链路。
+`test_settings_e2e.js` 会真起一个服务端，把「填地址 → 测试连接 → 保存 → 拉到数据」
+整条路走通，包括口令填错、地址填错这些岔路。
+
 `check_compose.py` 会模拟 Compose 的变量插值并校验 YAML 层级 ——
 本地没装 Docker 时 `docker compose config` 跑不了，它顶这个位。
+
+`test_settings.js` 和 `check_client.py` 已经在 Actions 里当门禁，
+之后改前端跑一遍就行（`test_settings_e2e.js` 需要 server 依赖，没进 CI）。
 
 ---
 
@@ -491,12 +550,15 @@ life-workbench/
 │  ├─ manifest.webmanifest
 │  └─ icon*.svg
 ├─ build/                  构建与自检脚本
-│  ├─ adapter.js           替换掉原资料库 SDK 的 API 适配器
+│  ├─ adapter.js           替换掉原资料库 SDK 的 API 适配器（含服务器地址设置面板）
 │  ├─ make_client.py       从原始页面完整生成 client/index.html（重建用）
-│  ├─ inject_api_base.py   给成品页面注入服务端地址（日常构建走这个）
+│  ├─ inject_api_base.py   给成品页面注入内置默认地址（日常构建走这个，可留空）
 │  ├─ sync_mobile.sh       一键生成安卓工程
 │  ├─ patch_android.py     给安卓工程打明文流量补丁
 │  ├─ check_client.py      客户端产物静态自检
+│  ├─ _harness.js          测试脚手架（最小 DOM / localStorage / vm 装载器）
+│  ├─ test_settings.js     服务器地址设置逻辑离线自测（不需要浏览器/真机/服务端）
+│  ├─ test_settings_e2e.js 同一套逻辑的端到端自测（自己起临时服务端）
 │  ├─ check_compose.py     compose 结构与变量自检（本地没 docker 时顶替 compose config）
 │  └─ smoke_test.py        服务端端到端冒烟测试
 ├─ mobile/                 Capacitor 壳

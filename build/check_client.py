@@ -33,6 +33,15 @@ MUST_HAVE = [
     'function mergeMedia',
     "var DB_MONEY = 'money'",
     '/api/t/',
+    # 服务器地址可在 App 内自行设置这条链路
+    'function lwNormalizeBase',
+    'function lwSetBase',
+    'function lwIsNativeApp',
+    'function lwOpenSettings',
+    'function lwMountGear',
+    'function lwProbe',
+    'lw_api_base',
+    '/api/health',
 ]
 
 MUST_NOT_HAVE = [

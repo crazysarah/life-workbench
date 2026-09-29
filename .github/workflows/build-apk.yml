@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       api_base:
-        description: '服务端地址（留空则用仓库变量 API_BASE，例 http://203.0.113.10:8080）'
+        description: '可选的「内置默认地址」（留空也行：APK 首次启动会引导用户自己填，装好后可在 App 内随时改）'
         required: false
         default: ''
       build_type:
@@ -27,8 +27,10 @@ on:
         options: [debug, release]
 
 env:
-  # 服务端地址不写死在这个文件里，从仓库变量读：
-  #   Settings → Secrets and variables → Actions → Variables → New variable
+  # 服务端地址是**可选**的：留空也能出包，APK 首次启动会引导用户自己填，
+  # 装好之后还能在 App 里随时改（右下角齿轮）。这里配的只是「内置默认地址」，
+  # 用户填过的地址优先级更高。
+  # 想内置的话：Settings → Secrets and variables → Actions → Variables → New variable
   #   名称 API_BASE，值形如 http://203.0.113.10:8080 或 https://life.example.com
   DEFAULT_API_BASE: ${{ vars.API_BASE }}
 
@@ -85,18 +87,25 @@ jobs:
         run: |
           API_BASE="${{ github.event.inputs.api_base }}"
           if [ -z "$API_BASE" ]; then API_BASE="$DEFAULT_API_BASE"; fi
-          if [ -z "$API_BASE" ]; then
-            echo "::error::没有服务端地址。请到仓库 Settings → Secrets and variables → Actions → Variables 新建变量 API_BASE，或手动触发 workflow 时在 api_base 里填写。"
-            exit 1
-          fi
           BUILD_TYPE="${{ github.event.inputs.build_type }}"
           if [ -z "$BUILD_TYPE" ]; then BUILD_TYPE="debug"; fi
-          # 公开仓库的 Actions 日志任何人都能看，把地址打码再打印
-          echo "::add-mask::$API_BASE"
-          echo "api_base=$API_BASE" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$API_BASE" ]; then
+            # 公开仓库的 Actions 日志任何人都能看，把地址打码再打印
+            echo "::add-mask::$API_BASE"
+            echo "api_base=$API_BASE" >> "$GITHUB_OUTPUT"
+            echo "服务端地址：已内置（日志里已打码）"
+          else
+            echo "api_base=" >> "$GITHUB_OUTPUT"
+            echo "服务端地址：未内置 —— APK 首次启动会引导用户自己填，装好后可在 App 内随时改"
+          fi
           echo "build_type=$BUILD_TYPE" >> "$GITHUB_OUTPUT"
-          echo "服务端地址：$API_BASE"
           echo "构建类型：$BUILD_TYPE"
+
+      - name: 自检（设置逻辑 + 页面静态检查）
+        run: |
+          node build/test_settings.js
+          python3 build/check_client.py client/index.html
 
       - name: 注入服务端地址
         run: |

@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # 一条命令跑完：生成客户端页面 -> 拷贝静态资源 -> 装 Capacitor -> 生成/同步安卓工程 -> 打补丁
 #
+# 服务端地址是**可选**的：不传就不内置，用户装好 App 后自己填（右下角齿轮随时能改）；
+# 传了就是「内置默认地址」，用户自己填过的地址优先级更高。
+#
 # 用法：
-#   bash build/sync_mobile.sh http://203.0.113.10:8080    # 换成你自己的服务器地址
-#   bash build/sync_mobile.sh                      # 不传地址 = 同源模式
+#   bash build/sync_mobile.sh                      # 不内置地址（推荐，一个包到处用）
+#   bash build/sync_mobile.sh http://203.0.113.10:8080    # 内置默认地址
 set -euo pipefail
 
 API_BASE="${1:-}"
@@ -14,7 +17,7 @@ if ! command -v "$PY" >/dev/null 2>&1; then
   PY=python
 fi
 
-echo "==> 1/5 注入服务端地址 (apiBase=${API_BASE:-同源})"
+echo "==> 1/5 注入内置地址 (apiBase=${API_BASE:-留空，装好后在 App 里填})"
 "$PY" "$ROOT/build/inject_api_base.py" --api-base "$API_BASE" --out "$ROOT/mobile/www/index.html"
 
 echo "==> 2/5 拷贝静态资源"

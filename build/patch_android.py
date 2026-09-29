@@ -8,11 +8,17 @@
   属于「明文流量 + 混合内容」。Android 9 起默认禁止明文 HTTP，
   不放开的话所有 /api 请求会被系统直接拒绝，表现为「连不上服务器」。
 
+  因为服务器地址是用户在 App 里自己填的（可能是任意 IP 的 http 地址），
+  这两道开关必须打开，否则用户填了地址也连不上、还看不出原因。
+
 补丁内容：
   1. AndroidManifest 的 <application> 加 android:usesCleartextTraffic="true"
-  2. 校验 allowMixedContent 是否生效（Capacitor 会据此设置 WebSettings）
+  2. 补 INTERNET 权限（防模板被改坏）
+  3. 校验 capacitor.config.json 里的 allowMixedContent / cleartext 没被关掉
+     —— 这两个是 Capacitor 侧设置 WebSettings 的依据，关掉同样会连不上
 """
 
+import json
 import os
 import re
 import sys
@@ -20,6 +26,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 MANIFEST = os.path.join(REPO, 'mobile', 'android', 'app', 'src', 'main', 'AndroidManifest.xml')
+CAP_CONFIG = os.path.join(REPO, 'mobile', 'capacitor.config.json')
 
 
 def main():
@@ -59,6 +66,30 @@ def main():
     else:
         print('[patch_android] 无需改动')
 
+    # ---- 3. 校验 Capacitor 侧的两个开关 ----
+    # 用户在 App 里可能填任意 http 地址，这两个开关关了就连不上，而且报错很难查。
+    if not os.path.isfile(CAP_CONFIG):
+        sys.exit('[patch_android] 找不到 %s' % CAP_CONFIG)
+    with open(CAP_CONFIG, 'r', encoding='utf-8') as f:
+        try:
+            cfg = json.load(f)
+        except ValueError as e:
+            sys.exit('[patch_android] %s 不是合法 JSON：%s' % (CAP_CONFIG, e))
+
+    android_cfg = cfg.get('android') or {}
+    server_cfg = cfg.get('server') or {}
+    problems = []
+    if android_cfg.get('allowMixedContent') is not True:
+        problems.append('android.allowMixedContent 不是 true（https 页面请求 http 接口会被拦）')
+    if server_cfg.get('cleartext') is not True:
+        problems.append('server.cleartext 不是 true（明文 HTTP 会被系统拒绝）')
+    if problems:
+        for p in problems:
+            print('[patch_android][FAIL] %s' % p)
+        sys.exit('[patch_android] capacitor.config.json 被改坏了：'
+                 '用户填 http 地址会连不上服务器，请改回 true 再构建')
+
+    print('[patch_android] capacitor.config.json 明文流量开关正常（allowMixedContent / cleartext）')
     print('[patch_android] 完成')
 
 
