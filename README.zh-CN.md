@@ -174,6 +174,40 @@ curl -s http://127.0.0.1:8080/api/tables -H "Authorization: Bearer <token>"
 > 如果 `BIND_ADDR=127.0.0.1`（前面已有反代），这个端口**不用对公网放行**，
 > 只需放行你反代自己的 80 / 443。
 
+### 7. 以后怎么更新
+
+仓库有新提交时（新功能、修 bug），在服务器上、仓库目录里跑一条命令：
+
+```bash
+bash deploy/update-server.sh
+```
+
+它会依次做：检查有没有未提交的改动 → `git pull` → 重建镜像并重启 → 健康检查。
+**数据在 docker 卷里，重建容器不会动它。**
+
+```bash
+bash deploy/update-server.sh --check     # 只看有没有新版，什么都不改
+bash deploy/update-server.sh --caddy     # 当初用 --caddy 装的，要带上这个参数
+```
+
+它拒绝在「工作区有未提交改动」时继续（否则 `git pull` 会打架）——
+`.env` 不受影响，它在 `.gitignore` 里，你自己的配置不会被碰。
+
+不想用脚本的话，等价于手工三条：
+
+```bash
+git pull && docker compose up -d --build
+curl http://127.0.0.1:8080/api/health
+```
+
+**新版起不来怎么办**：脚本会打印回滚命令（把代码切回更新前那个提交再重建），
+数据同样不受影响。也可以先看日志定位：`docker compose logs --tail=50 api`。
+
+> ⚠️ **更新服务端不会改变 App 的界面。** 手机 App 里的页面是**安装包自带的**，
+> 服务端只提供数据。所以数据会实时更新，但界面本身有改动时必须装新 APK
+> （见 [Releases](https://github.com/crazysarah/life-workbench/releases/latest)）。
+> 用浏览器直接打开服务端地址的话，刷新就是最新的页面。
+
 ---
 
 ## 二、接上你自己的反代
@@ -463,8 +497,9 @@ Docker Compose 是先对整份文件做变量插值、之后才判断服务启�
 现在的 `docker-compose.yml` 已经不含 Caddy，拉最新代码即可：
 
 ```bash
-git pull
-docker compose up -d --build
+bash deploy/update-server.sh      # 推荐，带健康检查；起不来会提示回滚
+# 手工等价：
+git pull && docker compose up -d --build
 ```
 
 **我已经有自己的反代，怎么接**
@@ -594,7 +629,8 @@ life-workbench/
 ├─ deploy/
 │  ├─ Caddyfile                    可选：自动 HTTPS（配下面那个文件用）
 │  ├─ docker-compose.caddy.yml     可选：Caddy 服务定义，不需要就别管
-│  └─ setup-server.sh              服务器端一键安装（--caddy 才启用 Caddy）
+│  ├─ setup-server.sh              服务器端一键安装（--caddy 才启用 Caddy）
+│  └─ update-server.sh             服务器端更新（拉代码 → 重建 → 健康检查，可回滚）
 ├─ docker-compose.yml
 ├─ .env.example
 ├─ README.md               英文（精简 Quick Start，GitHub 首页默认展示）

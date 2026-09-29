@@ -184,6 +184,42 @@ Open `HTTP_PORT` (default 8080) in your cloud firewall. On Tencent Cloud Lightho
 > group. With `BIND_ADDR=127.0.0.1` you do **not** expose 8080 publicly — open 80/443 for your
 > own reverse proxy instead.
 
+### Updating later
+
+When the repo has new commits, one command on the server (inside the repo directory):
+
+```bash
+bash deploy/update-server.sh
+```
+
+It checks for uncommitted changes → `git pull` → rebuilds and restarts → health check.
+**Your data lives in a docker volume, so rebuilding containers does not touch it.**
+
+```bash
+bash deploy/update-server.sh --check     # only report whether an update exists, change nothing
+bash deploy/update-server.sh --caddy     # if you installed with --caddy
+```
+
+It refuses to run with uncommitted changes (that would make `git pull` conflict) — your `.env`
+is unaffected, it is gitignored.
+
+Without the script, it is just:
+
+```bash
+git pull && docker compose up -d --build
+curl http://127.0.0.1:8080/api/health
+```
+
+**If the new version fails to start**, the script prints the rollback commands (reset to the
+previous commit and rebuild) — your data is untouched either way. Diagnostics:
+`docker compose logs --tail=50 api`.
+
+> ⚠️ **Updating the server does not change the app's UI.** The page inside the Android app is
+> **bundled into the APK**; the server only serves data. So your data updates live, but UI
+> changes require installing a new APK (see
+> [Releases](https://github.com/crazysarah/life-workbench/releases/latest)).
+> Opening the server address in a browser always shows the current page.
+
 ---
 
 ## 2. Behind your own reverse proxy
@@ -376,8 +412,9 @@ command even when the Caddy profile is inactive. The current `docker-compose.yml
 Caddy — just pull:
 
 ```bash
-git pull
-docker compose up -d --build
+bash deploy/update-server.sh      # recommended: rebuild + health check, prints rollback on failure
+# or manually:
+git pull && docker compose up -d --build
 ```
 
 **Phone cannot reach the server**
