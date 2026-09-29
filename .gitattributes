@@ -1,0 +1,21 @@
+# 统一用 LF：仓库在 Windows 上编辑，但服务端和 CI 跑在 Linux。
+# 不加这个，sync_mobile.sh 会因为 \r 导致 "bad interpreter" 跑不起来。
+* text=auto eol=lf
+
+*.sh      text eol=lf
+*.py      text eol=lf
+*.js      text eol=lf
+*.json    text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.md      text eol=lf
+*.svg     text eol=lf
+Dockerfile text eol=lf
+Caddyfile  text eol=lf
+.gitignore text eol=lf
+
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.apk     binary
+*.db      binary

@@ -1,0 +1,26 @@
+# Caddy 反向代理 —— 自动申请并续期 Let's Encrypt 证书
+# 只有用域名访问（--profile https）时才需要这个文件。
+
+{
+	email {$ACME_EMAIL}
+	# 国内服务器如果走不了 ACME，可以换用 ZeroSSL；香港/首尔直连没问题。
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# 工作台是单文件页面，禁掉缓存避免改版后拿到旧版本
+	@static {
+		not path /api/*
+	}
+	header @static Cache-Control "no-cache"
+
+	reverse_proxy api:8080 {
+		header_up X-Real-IP {remote_host}
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

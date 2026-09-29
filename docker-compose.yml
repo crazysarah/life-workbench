@@ -1,0 +1,45 @@
+name: life-workbench
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    image: life-workbench-api:latest
+    container_name: life-workbench-api
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      DB_FILE: /data/workbench.db
+      CLIENT_DIR: /app/client
+      APP_PASSWORD: ${APP_PASSWORD:?请先在 .env 里设置 APP_PASSWORD}
+      APP_SECRET: ${APP_SECRET:-lw-default-secret-change-me}
+    volumes:
+      # SQLite 数据落在这里：备份 = 拷这个目录，恢复 = 放回去
+      - ./data:/data
+    ports:
+      # 直接 IP 访问模式。改用域名 + HTTPS 后可把这两行删掉
+      - "${HTTP_PORT:-8080}:8080"
+
+  # 可选：自动 HTTPS。用域名时执行 docker compose --profile https up -d
+  caddy:
+    image: caddy:2-alpine
+    container_name: life-workbench-caddy
+    restart: unless-stopped
+    profiles: ["https"]
+    depends_on:
+      - api
+    environment:
+      DOMAIN: ${DOMAIN:?请设置 DOMAIN，例如 life.example.com}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

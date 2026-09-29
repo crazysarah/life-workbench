@@ -1,0 +1,119 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'client/**'
+      - 'mobile/**'
+      - 'build/**'
+      - '.github/workflows/build-apk.yml'
+  pull_request:
+    paths:
+      - 'client/**'
+      - 'mobile/**'
+      - 'build/**'
+  workflow_dispatch:
+    inputs:
+      api_base:
+        description: '服务端地址（APK 内置，例如 http://150.109.255.241:8080）'
+        required: false
+        default: 'http://150.109.255.241:8080'
+      build_type:
+        description: '构建类型'
+        required: true
+        default: 'debug'
+        type: choice
+        options: [debug, release]
+
+env:
+  # 想改服务器地址，改这里（或者手动触发时临时填）
+  DEFAULT_API_BASE: http://150.109.255.241:8080
+
+jobs:
+  apk:
+    name: 构建 APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 准备 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 准备 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: 准备 Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 解析服务端地址
+        id: cfg
+        run: |
+          API_BASE="${{ github.event.inputs.api_base }}"
+          if [ -z "$API_BASE" ]; then API_BASE="$DEFAULT_API_BASE"; fi
+          BUILD_TYPE="${{ github.event.inputs.build_type }}"
+          if [ -z "$BUILD_TYPE" ]; then BUILD_TYPE="debug"; fi
+          echo "api_base=$API_BASE" >> "$GITHUB_OUTPUT"
+          echo "build_type=$BUILD_TYPE" >> "$GITHUB_OUTPUT"
+          echo "服务端地址：$API_BASE"
+          echo "构建类型：$BUILD_TYPE"
+
+      - name: 生成客户端页面
+        run: |
+          python3 build/make_client.py \
+            --api-base "${{ steps.cfg.outputs.api_base }}" \
+            --out mobile/www/index.html
+
+      - name: 拷贝静态资源
+        run: |
+          mkdir -p mobile/www
+          cp client/manifest.webmanifest mobile/www/
+          cp client/icon.svg mobile/www/
+          cp client/icon-maskable.svg mobile/www/
+
+      - name: 安装 Capacitor 依赖
+        working-directory: mobile
+        run: npm install --no-audit --no-fund
+
+      - name: 生成并同步安卓工程
+        working-directory: mobile
+        run: |
+          if [ ! -d android ]; then npx cap add android; fi
+          npx cap sync android
+
+      - name: 打安卓补丁
+        run: python3 build/patch_android.py
+
+      - name: 构建 APK
+        working-directory: mobile/android
+        run: |
+          chmod +x ./gradlew
+          if [ "${{ steps.cfg.outputs.build_type }}" = "release" ]; then
+            ./gradlew assembleRelease --no-daemon
+          else
+            ./gradlew assembleDebug --no-daemon
+          fi
+
+      - name: 收集产物
+        id: collect
+        run: |
+          mkdir -p dist
+          find mobile/android/app/build/outputs/apk -name '*.apk' -exec cp {} dist/ \;
+          ls -lh dist/
+          APK=$(ls dist/*.apk 2>/dev/null | head -1)
+          if [ -z "$APK" ]; then echo "没有产出 APK"; exit 1; fi
+          echo "apk_name=$(basename "$APK")" >> "$GITHUB_OUTPUT"
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: life-workbench-apk-${{ steps.cfg.outputs.build_type }}
+          path: dist/*.apk
+          retention-days: 30
+          if-no-files-found: error

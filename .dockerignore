@@ -1,0 +1,11 @@
+.git
+.github
+_src
+data
+node_modules
+**/node_modules
+mobile/android
+mobile/www
+*.md
+.env
+*.log

@@ -1,0 +1,14 @@
+{
+  "appId": "com.panshao.lifeworkbench",
+  "appName": "生活工作台",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": true,
+    "webContentsDebuggingEnabled": false,
+    "backgroundColor": "#faf8f5"
+  },
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  }
+}
