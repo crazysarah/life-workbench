@@ -275,7 +275,8 @@ Actions 读不到服务器上的 `.env`，所以要内置的话在仓库 **Varia
    不配也能出包，装好后在 App 里填一次即可
 4. 推送代码，或到 **Actions → Build Android APK → Run workflow** 手动触发
    （手动触发时也能在 `api_base` 输入框临时填一个地址，会覆盖变量）
-5. 跑完在 workflow 页面底部 **Artifacts** 下载 `life-workbench-apk-debug`
+5. 跑完在 workflow 页面底部 **Artifacts** 下载 `life-workbench-v1.0.2-debug`
+   （产物名里的版本号来自 `VERSION`，见下）
 
 > 工作流里的地址只出现在「构建时内置」这一步；公开仓库的日志会对它打码。
 > 没配地址也不会失败 —— 那种包里没有内置地址，首次打开会引导用户填写。
@@ -301,6 +302,53 @@ cd mobile/android
 产物：`mobile/android/app/build/outputs/apk/debug/app-debug.apk`
 
 Windows 上在 Git Bash 里跑同样的命令。
+
+### 版本号
+
+版本号**只有一个来源**：仓库根目录的 `VERSION` 文件（内容形如 `1.0.2`）。
+改它、推送，CI 会自动把它注入到包里。
+
+```
+versionName = VERSION 原样                        手机「设置 → 应用」里显示的就是它
+versionCode = major*10000 + minor*100 + patch     系统用来比大小的（1.0.2 → 10002）
+```
+
+**不要直接改 `mobile/android/app/build.gradle`。** 那个目录是 `npx cap add android`
+现场生成的，被 `.gitignore` 排除、不进版本控制，脚手架给的永远是
+`versionCode 1` / `versionName "1.0"`。你本地改的那份 CI 构建时根本不存在；
+就算存在，也会被 `cap sync` 覆盖掉。
+
+这正是历史 bug 的成因：包里的版本号恒为 `1.0`，
+装了新版在系统里也显示 `1.0`，覆盖安装还被当成同一个版本。
+
+CI 里有两道保险：
+
+| 步骤 | 作用 |
+|---|---|
+| 注入版本号 | 在 `cap sync` **之后**写入 `build.gradle` |
+| 校验包内版本号 | 解开 APK 读里面的二进制 `AndroidManifest.xml`，跟 `VERSION` 对不上就整条流水线失败 |
+
+本地构建走的是同一条路（`build/sync_mobile.sh` 的最后一步）。出包后可以自己再验一次：
+
+```bash
+python3 build/check_apk_version.py    # 不给参数会自动找产物
+```
+
+它直接读包内的 manifest，等价于 `aapt dump badging`，但不需要装 Android SDK。
+
+### 发新版
+
+```bash
+echo 1.0.3 > VERSION                     # 1. 改版本号，只改这一处
+python3 build/set_version.py --check     # 2. 可选：本地先看换算结果对不对
+git commit -am "release: v1.0.3" && git push   # 3. 推送，CI 自动出包
+```
+
+CI 跑完在 Actions 页面下载 `life-workbench-v1.0.3-debug`，
+再发一个 **Release**、打 tag `v1.0.3`，把 APK 传上去。
+README 里的下载链接用的是 `/releases/latest`，会自动跟着走，不用改文档。
+
+> 老用户直接覆盖安装即可，数据在各自的服务器上，不受影响。
 
 ---
 
@@ -561,6 +609,7 @@ curl -X POST http://127.0.0.1:8080/api/t/money/clear \
 
 ```bash
 node build/test_settings.js       # 设置面板逻辑（108 项：地址容错、换服务器清态、探活、面板 DOM、清空示例、齿轮）
+python3 build/test_version.py     # 版本号注入：换算规则、幂等、只动该动的两行（29 项）
 python3 build/check_client.py     # 客户端产物：语法、外链、宿主残留
 python3 build/check_compose.py    # compose 结构与变量（需 pyyaml）
 python3 build/check_docs.py       # 双语文档：语言互链、英文版无残留中文、引用的文件都在
@@ -582,7 +631,13 @@ python3 build/smoke_test.py
 `check_compose.py` 会模拟 Compose 的变量插值并校验 YAML 层级 ——
 本地没装 Docker 时 `docker compose config` 跑不了，它顶这个位。
 
-`test_settings.js` 和 `check_client.py` 已经在 Actions 里当门禁，
+`test_version.py` 守的是版本号那条链路：`versionCode` 的换算规则（1.0.2 → 10002，
+换错了会导致覆盖安装被系统拒绝）、注入的幂等性、以及「只动该动的两行」。
+它只测纯逻辑、不碰真实 APK —— 真包由构建流程自己验：每出一个包都会跑
+`check_apk_version.py` 解开 APK 读里面的二进制 manifest，跟 `VERSION` 对不上就失败。
+这是防「配置改对了但没进包」的那道闸。
+
+`test_settings.js`、`test_version.py` 和 `check_client.py` 已经在 Actions 里当门禁，
 之后改前端跑一遍就行（`test_settings_e2e.js` 需要 server 依赖，没进 CI）。
 
 `check_docs.py` 是两份 README 的守门人：这两份文档分头维护（英文版是精简版，
@@ -613,12 +668,15 @@ life-workbench/
 │  ├─ adapter.js           替换掉原资料库 SDK 的 API 适配器（含服务器地址设置面板）
 │  ├─ make_client.py       从原始页面完整生成 client/index.html（重建用；含页面功能补丁）
 │  ├─ inject_api_base.py   给成品页面注入内置默认地址（日常构建走这个，可留空）
-│  ├─ sync_mobile.sh       一键生成安卓工程
+│  ├─ sync_mobile.sh       一键生成安卓工程（含注入版本号）
 │  ├─ patch_android.py     给安卓工程打明文流量补丁
+│  ├─ set_version.py       把 VERSION 写进安卓工程（安卓工程是现场生成的，只能注入）
+│  ├─ check_apk_version.py 解开 APK 读包内真实版本号（不信构建配置，只信包）
 │  ├─ check_client.py      客户端产物静态自检
 │  ├─ _harness.js          测试脚手架（最小 DOM / localStorage / vm 装载器）
 │  ├─ test_settings.js     服务器地址设置逻辑离线自测（不需要浏览器/真机/服务端）
 │  ├─ test_settings_e2e.js 同一套逻辑的端到端自测（自己起临时服务端）
+│  ├─ test_version.py      版本号注入自检（换算规则、幂等、边界）
 │  ├─ check_compose.py     compose 结构与变量自检（本地没 docker 时顶替 compose config）
 │  ├─ check_docs.py        两份 README 的自检（语言互链、英文版无残留中文、引用有效）
 │  └─ smoke_test.py        服务端端到端冒烟测试
@@ -633,6 +691,7 @@ life-workbench/
 │  └─ update-server.sh             服务器端更新（拉代码 → 重建 → 健康检查，可回滚）
 ├─ docker-compose.yml
 ├─ .env.example
+├─ VERSION                 APK 版本号唯一来源（改这里就够了，见「三、构建 APK」）
 ├─ README.md               英文（精简 Quick Start，GitHub 首页默认展示）
 ├─ README.zh-CN.md         中文（本文件，完整文档）
 └─ .github/workflows/

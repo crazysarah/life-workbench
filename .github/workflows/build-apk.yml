@@ -7,12 +7,15 @@ on:
       - 'client/**'
       - 'mobile/**'
       - 'build/**'
+      # 改版本号也要触发构建：VERSION 是版本号的唯一来源
+      - 'VERSION'
       - '.github/workflows/build-apk.yml'
   pull_request:
     paths:
       - 'client/**'
       - 'mobile/**'
       - 'build/**'
+      - 'VERSION'
   workflow_dispatch:
     inputs:
       api_base:
@@ -102,9 +105,15 @@ jobs:
           echo "build_type=$BUILD_TYPE" >> "$GITHUB_OUTPUT"
           echo "构建类型：$BUILD_TYPE"
 
-      - name: 自检（设置逻辑 + 页面静态检查）
+          # 版本号唯一来源：仓库根目录 VERSION。注入和校验都以它为准。
+          VERSION="$(head -1 VERSION | tr -d ' \t\r\n')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "版本号：$VERSION"
+
+      - name: 自检（设置逻辑 + 版本号 + 页面静态检查）
         run: |
           node build/test_settings.js
+          python3 build/test_version.py
           python3 build/check_client.py client/index.html
 
       - name: 注入服务端地址
@@ -133,6 +142,12 @@ jobs:
       - name: 打安卓补丁
         run: python3 build/patch_android.py
 
+      # 必须放在 cap add/sync 之后：安卓工程是现场生成的（.gitignore 忽略、不入库），
+      # 脚手架版本号永远是 versionCode 1 / versionName "1.0"，
+      # 早于这一步做任何版本号改动都会被 cap sync 覆盖掉。
+      - name: 注入版本号
+        run: python3 build/set_version.py
+
       - name: 构建 APK
         working-directory: mobile/android
         run: |
@@ -143,20 +158,31 @@ jobs:
             ./gradlew assembleDebug --no-daemon
           fi
 
+      # 直接读包内二进制 AndroidManifest.xml，不看构建配置 ——
+      # 防「配置改对了但没进包」这种静默失败（历史 bug：包里恒为 1.0）
+      - name: 校验包内版本号
+        run: |
+          APK=$(find mobile/android/app/build/outputs/apk -name '*.apk' | head -1)
+          if [ -z "$APK" ]; then echo "没有产出 APK"; exit 1; fi
+          python3 build/check_apk_version.py "$APK"
+
       - name: 收集产物
         id: collect
         run: |
           mkdir -p dist
-          find mobile/android/app/build/outputs/apk -name '*.apk' -exec cp {} dist/ \;
-          ls -lh dist/
-          APK=$(ls dist/*.apk 2>/dev/null | head -1)
+          APK=$(find mobile/android/app/build/outputs/apk -name '*.apk' | head -1)
           if [ -z "$APK" ]; then echo "没有产出 APK"; exit 1; fi
-          echo "apk_name=$(basename "$APK")" >> "$GITHUB_OUTPUT"
+          # 产物名带上版本号，下载下来一眼认得出是哪个版本
+          OUT="dist/life-workbench-v${{ steps.cfg.outputs.version }}-${{ steps.cfg.outputs.build_type }}.apk"
+          cp "$APK" "$OUT"
+          ls -lh dist/
+          echo "apk_name=$(basename "$OUT")" >> "$GITHUB_OUTPUT"
+          echo "产物：$OUT"
 
       - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
-          name: life-workbench-apk-${{ steps.cfg.outputs.build_type }}
+          name: life-workbench-v${{ steps.cfg.outputs.version }}-${{ steps.cfg.outputs.build_type }}
           path: dist/*.apk
           retention-days: 30
           if-no-files-found: error
