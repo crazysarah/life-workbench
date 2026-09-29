@@ -86,6 +86,29 @@ else
   fi
 fi
 
+# 数据目录：用 docker 卷就什么都不用做；用宿主目录必须先把属主让给 uid 1000，
+# 否则容器里的 node 写不进去 → 反复重启报 SQLITE_CANTOPEN。
+DATA_VOL="$(env_get DATA_VOLUME)"
+case "$DATA_VOL" in
+  ""|lw-data)
+    DATA_NOTE="docker 卷 lw-data"
+    ;;
+  /*|./*)
+    mkdir -p "$DATA_VOL"
+    if chown -R 1000:1000 "$DATA_VOL" 2>/dev/null; then
+      DATA_NOTE="宿主机目录 ${DATA_VOL}（已授权 1000:1000）"
+    else
+      echo "!! ${DATA_VOL} 授权失败：容器里的 node 是 uid 1000，写不进去会起不来。"
+      echo "   请手动执行：sudo chown -R 1000:1000 ${DATA_VOL}"
+      exit 1
+    fi
+    ;;
+  *)
+    DATA_NOTE="docker 卷 ${DATA_VOL}"
+    ;;
+esac
+echo "    数据目录：${DATA_NOTE}"
+
 echo "==> 3/5 构建镜像（第一次会慢一些）"
 "${COMPOSE_CMD[@]}" build
 
@@ -166,11 +189,13 @@ else
 EOF
 fi
 
-cat <<'EOF'
+cat <<EOF
   常用命令：
-    docker compose logs -f api      看日志
-    docker compose restart api      重启
-    docker compose down             停止
-    cp data/workbench.db ~/bak.db   备份数据
+    docker compose logs -f api              看日志
+    docker compose restart api              重启
+    docker compose down                     停止
+    docker compose cp api:/data/workbench.db ~/bak-\$(date +%F).db    备份数据
+
+  数据位置：${DATA_NOTE}
 
 EOF

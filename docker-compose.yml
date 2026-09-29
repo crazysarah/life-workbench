@@ -19,13 +19,23 @@ services:
       CLIENT_DIR: /app/client
       APP_PASSWORD: ${APP_PASSWORD:?请先在 .env 里设置 APP_PASSWORD}
       APP_SECRET: ${APP_SECRET:-lw-default-secret-change-me}
-    volumes:
-      # SQLite 数据落在这里：备份 = 拷这个目录，恢复 = 放回去
-      - ./data:/data
     ports:
       # 三种情况按需选一：
-      #   1) 直接 IP 访问            → 保持默认，BIND_ADDR 不用设（等于 0.0.0.0）
-      #   2) 本机已有反代（nginx…）   → .env 里设 BIND_ADDR=127.0.0.1，只对本机开放
-      #   3) 反代跑在同一个 docker 网络 → 把下面两行整个删掉，
-      #                                 反代上游填 http://life-workbench-api:8080
+      #   1) 直接 IP 访问              → 保持默认，BIND_ADDR 不用设（等于 0.0.0.0）
+      #   2) 本机已有反代（nginx…）     → .env 里设 BIND_ADDR=127.0.0.1，只对本机开放
+      #   3) 反代跑在同一个 docker 网络 → 把下面这行整个删掉，
+      #                                  反代上游填 http://life-workbench-api:8080
       - "${BIND_ADDR:-0.0.0.0}:${HTTP_PORT:-8080}:8080"
+    volumes:
+      # 数据存哪，由 .env 的 DATA_VOLUME 决定：
+      #   留空（默认）→ docker 卷 lw-data。属主随镜像，权限永远对，不会踩下面的坑
+      #   ./data     → 存到仓库目录下，文件在宿主机直接可见，但必须先授权：
+      #                mkdir -p data && sudo chown -R 1000:1000 data
+      #
+      # 坑：docker 自动创建的宿主目录属于 root:root，而容器里跑的是 uid 1000 的 node，
+      # 写不进 → 容器反复重启报 SQLITE_CANTOPEN。挂载会覆盖镜像里对 /data 的授权，
+      # 所以镜像层面修不了，只能在宿主机侧授权或改用卷。
+      - ${DATA_VOLUME:-lw-data}:/data
+
+volumes:
+  lw-data:

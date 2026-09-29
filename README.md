@@ -99,6 +99,23 @@ PUBLIC_BASE_URL=               # 你的服务器对外地址，例 http://203.0.
 
 填 `127.0.0.1` 之后，8080 只对本机开放，公网上扫不到这个端口，比直连安全。
 
+`DATA_VOLUME` 决定数据库文件放哪，**建议留空**：
+
+| 填什么 | 效果 | 备份方式 |
+|---|---|---|
+| 留空（推荐） | 用 docker 卷 `lw-data` | `docker compose cp api:/data/workbench.db ./备份.db` |
+| `./data` | 存到仓库目录下，宿主机上直接可见 | 直接 `cp data/workbench.db` |
+
+⚠️ **用 `./data` 必须先授权，否则容器起不来**：
+
+```bash
+mkdir -p data && sudo chown -R 1000:1000 data
+```
+
+原因：容器里跑的是 uid 1000 的 `node`，而 docker 自动创建的宿主目录属于 `root:root`。
+挂载会**覆盖镜像里对 `/data` 的授权**，所以镜像层面修不了这件事。
+漏了这步的表现是容器反复重启，日志里刷 `SqliteError: unable to open database file`。
+
 ### 4. 启动
 
 **推荐一键脚本**，它会自动装 Docker、生成 `.env` 和随机口令、构建启动、跑健康检查，
@@ -300,27 +317,42 @@ bash deploy/setup-server.sh --caddy
 
 ## 七、备份与恢复
 
-数据就是一个 SQLite 文件，在 `./data/` 目录。
+数据就是一个 SQLite 文件（外加 WAL 的 `-wal` / `-shm` 两个附属文件），
+容器里的路径固定是 `/data/workbench.db`，只是物理位置随 `DATA_VOLUME` 变。
+
+**通用备份（两种模式都行，容器跑着也能拷）**
 
 ```bash
-# 备份（容器运行中也安全，用 sqlite 的在线备份）
-docker compose exec api sh -c 'kill -STOP 1; cp /data/workbench.db /data/backup.db; kill -CONT 1'
-cp data/backup.db ~/workbench-$(date +%F).db
-
-# 或者直接停服再拷
-docker compose stop api && cp -r data ~/workbench-backup-$(date +%F) && docker compose start api
+docker compose cp api:/data/workbench.db ~/workbench-$(date +%F).db
 ```
 
-恢复：把 `.db` 文件放回 `data/` 目录，重启容器。
+**`DATA_VOLUME` 留空（docker 卷）** —— 想直接摸到文件，去卷的挂载点：
 
 ```bash
+sudo ls /var/lib/docker/volumes/life-workbench_lw-data/_data/
+```
+
+**`DATA_VOLUME=./data`（宿主目录）** —— 最直观，直接拷：
+
+```bash
+cp data/workbench.db ~/workbench-$(date +%F).db
+```
+
+恢复都是塞回去再重启：
+
+```bash
+docker compose cp ~/workbench-2026-09-29.db api:/data/workbench.db
+docker compose exec api sh -c 'rm -f /data/workbench.db-wal /data/workbench.db-shm'
 docker compose restart api
 ```
+
+> 恢复前把那两个 WAL 附属文件清掉，否则可能读到旧内容。
+> 换成自己的备份文件名再执行。
 
 建议加个 crontab 每天拷一份：
 
 ```cron
-0 4 * * * cd /opt/life-workbench && cp data/workbench.db /root/backups/workbench-$(date +\%F).db
+0 4 * * * cd /opt/life-workbench && docker compose cp api:/data/workbench.db /root/backups/workbench-$(date +\%F).db
 ```
 
 ---
@@ -346,6 +378,34 @@ docker compose restart api
 ---
 
 ## 九、常见问题
+
+**容器反复重启，日志刷 `SqliteError: unable to open database file`**
+
+数据库文件写不进去。九成是**宿主目录属主不对**：
+
+```bash
+ls -ldn data            # 看 uid/gid，容器里跑的是 uid 1000
+```
+
+容器里是 uid 1000 的 `node`，而 docker 自动创建的宿主目录属于 `root:root`（`uid=0`）→
+建不了 `workbench.db`，连 WAL 的 `-wal` / `-shm` 也建不出来。
+
+挂载会**覆盖镜像里对 `/data` 的授权**，所以在 Dockerfile 里 `chown` 是没用的，
+只能在宿主机这一侧解决。两个办法：
+
+```bash
+# A. 最快：把宿主目录让给 uid 1000
+sudo chown -R 1000:1000 ./data && docker compose restart api
+
+# B. 推荐：改用 docker 卷，权限随镜像走，永远不会踩这个坑
+#    把 .env 里的 DATA_VOLUME 留空（或整行删掉），然后：
+docker compose up -d
+```
+
+> 换成卷之后，之前那个 root 属主的 `data/` 目录就没用了：`sudo rm -rf data`
+> （确认里面没有你要留的数据库文件再删）。
+
+新版本的日志会把目录属主、进程身份和这三条解法直接打出来，照着做即可。
 
 **`docker compose up` 报 `required variable DOMAIN is missing a value`**
 
@@ -396,6 +456,24 @@ curl -X POST http://127.0.0.1:8080/api/t/money/clear \
 
 ---
 
+## 本地自检
+
+改完配置或前端之后，不用起 Docker 也能先验一遍：
+
+```bash
+python3 build/check_compose.py    # compose 结构与变量（需 pyyaml）
+python3 build/check_client.py     # 客户端产物：语法、外链、宿主残留
+
+# 服务端端到端（33 项）
+cd server && node src/index.js &
+python3 build/smoke_test.py
+```
+
+`check_compose.py` 会模拟 Compose 的变量插值并校验 YAML 层级 ——
+本地没装 Docker 时 `docker compose config` 跑不了，它顶这个位。
+
+---
+
 ## 项目结构
 
 ```
@@ -412,13 +490,14 @@ life-workbench/
 │  ├─ index.html           构建产物（由 build/make_client.py 生成）
 │  ├─ manifest.webmanifest
 │  └─ icon*.svg
-├─ build/                  构建脚本
+├─ build/                  构建与自检脚本
 │  ├─ adapter.js           替换掉原资料库 SDK 的 API 适配器
 │  ├─ make_client.py       从原始页面完整生成 client/index.html（重建用）
 │  ├─ inject_api_base.py   给成品页面注入服务端地址（日常构建走这个）
 │  ├─ sync_mobile.sh       一键生成安卓工程
 │  ├─ patch_android.py     给安卓工程打明文流量补丁
 │  ├─ check_client.py      客户端产物静态自检
+│  ├─ check_compose.py     compose 结构与变量自检（本地没 docker 时顶替 compose config）
 │  └─ smoke_test.py        服务端端到端冒烟测试
 ├─ mobile/                 Capacitor 壳
 │  ├─ package.json
