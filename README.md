@@ -24,11 +24,18 @@
                 ▼
 ┌──────────────────────────────┐
 │  你的服务器 (Docker)          │
-│  ├─ api   Node22 + Express    │
-│  │        └─ SQLite (数据卷)   │
-│  └─ caddy 可选：自动 HTTPS     │
+│  └─ api   Node22 + Express    │
+│           └─ SQLite (数据卷)   │
+│                               │
+│  反代（可选，你自己决定）        │
+│  已有 nginx/Traefik 就用现成的  │
+│  没有再用仓库自带的 Caddy        │
 └──────────────────────────────┘
 ```
+
+**`docker compose up -d --build` 只起后端**，一条命令直接可用。
+仓库自带的 Caddy 是可选件，放在 `deploy/docker-compose.caddy.yml`，
+需要时叠加使用；你已经有反代就完全不用理它。
 
 前端页面本身不直连数据库，所有读写都通过那四个函数走 HTTP：
 
@@ -82,6 +89,16 @@ PUBLIC_BASE_URL=               # 你的服务器对外地址，例 http://203.0.
 
 `PUBLIC_BASE_URL` 就是**手机要连的地址**，留空的话部署脚本会自动探测公网 IP。
 
+`BIND_ADDR` 决定服务端口对谁开放，按你的情况选：
+
+| 你的情况 | `BIND_ADDR` | 反代上游填什么 |
+|---|---|---|
+| 直接 IP 访问，没反代 | 留空（= `0.0.0.0`） | — |
+| 本机已有 nginx / Traefik 等反代 | `127.0.0.1` | `http://127.0.0.1:8080` |
+| 反代也跑在 docker 里 | `127.0.0.1`，并把 `docker-compose.yml` 里 `api` 的 `ports:` 两行删掉 | `http://life-workbench-api:8080` |
+
+填 `127.0.0.1` 之后，8080 只对本机开放，公网上扫不到这个端口，比直连安全。
+
 ### 4. 启动
 
 **推荐一键脚本**，它会自动装 Docker、生成 `.env` 和随机口令、构建启动、跑健康检查，
@@ -93,6 +110,12 @@ bash deploy/setup-server.sh
 ```
 
 端口被占了就换一个：`bash deploy/setup-server.sh --port 18080`
+
+需要仓库自带的 Caddy 自动签证书才加 `--caddy`（**已有反代就不要加**）：
+
+```bash
+bash deploy/setup-server.sh --caddy
+```
 
 **想手动控制**就自己来：
 
@@ -124,10 +147,38 @@ curl -s http://127.0.0.1:8080/api/tables -H "Authorization: Bearer <token>"
 云控制台的安全组要放行 `HTTP_PORT`（默认 8080）。腾讯云轻量：**防火墙** → 添加规则 → TCP 8080。
 
 > 服务器本机能 `curl` 通、手机连不上，九成是安全组没放行。
+> 如果 `BIND_ADDR=127.0.0.1`（前面已有反代），这个端口**不用对公网放行**，
+> 只需放行你反代自己的 80 / 443。
 
 ---
 
-## 二、构建 APK
+## 二、接上你自己的反代
+
+已经有 nginx / Traefik / 自己的 Caddy 的，按这三步接：
+
+1. `.env` 里设 `BIND_ADDR=127.0.0.1`，然后 `docker compose up -d --build`
+2. 反代上游指向 `http://127.0.0.1:8080`（反代在 docker 里则用 `http://life-workbench-api:8080`）
+3. 反代配置里记得带这两个头，否则日志里看不到真实来源 IP：
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+再把这个地址填进 `.env` 的 `PUBLIC_BASE_URL`（例 `https://life.example.com`），
+它就是手机要连的地址，也要同步填到 GitHub 仓库变量 `API_BASE` 用于出包。
+
+> 页面本身是单文件、零外部依赖，反代**不需要**额外配 WebSocket、缓存或压缩，
+> 普通 HTTP 转发即可。
+
+---
+
+## 三、构建 APK
 
 APK 里的前端是**内嵌**的，服务端地址在构建时写进去。所以出包前先确定地址：
 
@@ -183,7 +234,7 @@ Windows 上在 Git Bash 里跑同样的命令。
 
 ---
 
-## 三、装到手机
+## 四、装到手机
 
 1. 把 `app-debug.apk` 传到手机（微信/QQ 传给自己、或用 `adb install`）
 2. 点开安装，系统提示「未知来源应用」时允许一次
@@ -198,7 +249,7 @@ adb install -r app-debug.apk
 
 ---
 
-## 四、换服务器地址
+## 五、换服务器地址
 
 APK 里的地址是构建时写进去的。两种改法：
 
@@ -216,24 +267,38 @@ lw.login()                      // 重新弹登录框
 
 ---
 
-## 五、升级域名 + HTTPS
+## 六、升级域名 + HTTPS
 
 明文 HTTP 能用，但有两个代价：Android 上要放开明文流量（已在补丁里处理），
-以及部分网络环境下会被中间设备干扰。有域名就走 HTTPS：
+以及部分网络环境下会被中间设备干扰。有域名就走 HTTPS。
+
+**已经有反代的**：直接在你自己那套里加一个站点指向 `http://127.0.0.1:8080`
+（见第二节），证书用你现有的方式签，不用动这个仓库。
+
+**没有反代的**：用仓库自带的 Caddy，自动申请并续期 Let's Encrypt 证书。
 
 1. 域名 A 记录指向服务器公网 IP
-2. `.env` 里填 `DOMAIN=life.example.com` 和 `ACME_EMAIL=you@example.com`
-3. 把 `docker-compose.yml` 里 `api` 服务的 `ports:` 两行删掉（只让 Caddy 对外）
-4. `docker compose --profile https up -d --build`
+2. `.env` 里填 `DOMAIN=life.example.com`，建议连 `ACME_EMAIL=you@example.com` 一起填
+3. 启动时叠加 Caddy 文件：
 
-Caddy 会自动申请并续期 Let's Encrypt 证书。之后把 APK 的地址改成
-`https://life.example.com` 重新构建即可。
+```bash
+docker compose -f docker-compose.yml -f deploy/docker-compose.caddy.yml up -d --build
+```
 
+脚本也一样，加 `--caddy` 即可，它会自动把 `BIND_ADDR` 收到 `127.0.0.1`：
+
+```bash
+bash deploy/setup-server.sh --caddy
+```
+
+之后把 APK 的地址改成 `https://life.example.com` 重新构建即可。
+
+> Caddy 要占 80 / 443，本机已有反代就不要用这个文件，会端口冲突。
 > 轻量服务器广州节点绑域名走 80/443 需要备案；香港 / 首尔不用。
 
 ---
 
-## 六、备份与恢复
+## 七、备份与恢复
 
 数据就是一个 SQLite 文件，在 `./data/` 目录。
 
@@ -260,7 +325,7 @@ docker compose restart api
 
 ---
 
-## 七、接口速查
+## 八、接口速查
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -280,7 +345,26 @@ docker compose restart api
 
 ---
 
-## 八、常见问题
+## 九、常见问题
+
+**`docker compose up` 报 `required variable DOMAIN is missing a value`**
+
+说明你跑的是旧版代码——Caddy 还在主文件里。这个报错**跟要不要用 Caddy 无关**：
+Docker Compose 是先对整份文件做变量插值、之后才判断服务启不启动，
+所以 `${DOMAIN:?...}` 这种「必需变量」写法只要出现在文件里，
+哪怕 Caddy 的 profile 没激活，命令也会直接失败。
+
+现在的 `docker-compose.yml` 已经不含 Caddy，拉最新代码即可：
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+**我已经有自己的反代，怎么接**
+
+`.env` 里设 `BIND_ADDR=127.0.0.1`，反代上游指向 `http://127.0.0.1:8080`。
+详见第二节。
 
 **手机连不上服务器**
 按顺序查：① 服务端 `curl 127.0.0.1:端口/api/health` 通不通 → ② 云控制台安全组放行没有
@@ -341,8 +425,9 @@ life-workbench/
 │  ├─ capacitor.config.json
 │  └─ android/             （自动生成，不入库）
 ├─ deploy/
-│  ├─ Caddyfile            可选：自动 HTTPS
-│  └─ setup-server.sh      服务器端一键安装（装 Docker + 生成 .env + 起服务）
+│  ├─ Caddyfile                    可选：自动 HTTPS（配下面那个文件用）
+│  ├─ docker-compose.caddy.yml     可选：Caddy 服务定义，不需要就别管
+│  └─ setup-server.sh              服务器端一键安装（--caddy 才启用 Caddy）
 ├─ docker-compose.yml
 ├─ .env.example
 └─ .github/workflows/build-apk.yml

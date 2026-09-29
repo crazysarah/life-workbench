@@ -1,5 +1,10 @@
 name: life-workbench
 
+# 只需要这一个文件就能跑起来：docker compose up -d --build
+#
+# 反代（nginx / Caddy / Traefik 等）请用你自己已有的，参考 .env 里的 BIND_ADDR 说明。
+# 仓库自带的 Caddy 是可选件，放在 deploy/docker-compose.caddy.yml，不需要就别管它。
+
 services:
   api:
     build:
@@ -18,28 +23,9 @@ services:
       # SQLite 数据落在这里：备份 = 拷这个目录，恢复 = 放回去
       - ./data:/data
     ports:
-      # 直接 IP 访问模式。改用域名 + HTTPS 后可把这两行删掉
-      - "${HTTP_PORT:-8080}:8080"
-
-  # 可选：自动 HTTPS。用域名时执行 docker compose --profile https up -d
-  caddy:
-    image: caddy:2-alpine
-    container_name: life-workbench-caddy
-    restart: unless-stopped
-    profiles: ["https"]
-    depends_on:
-      - api
-    environment:
-      DOMAIN: ${DOMAIN:?请设置 DOMAIN，例如 life.example.com}
-      ACME_EMAIL: ${ACME_EMAIL:-}
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-
-volumes:
-  caddy_data:
-  caddy_config:
+      # 三种情况按需选一：
+      #   1) 直接 IP 访问            → 保持默认，BIND_ADDR 不用设（等于 0.0.0.0）
+      #   2) 本机已有反代（nginx…）   → .env 里设 BIND_ADDR=127.0.0.1，只对本机开放
+      #   3) 反代跑在同一个 docker 网络 → 把下面两行整个删掉，
+      #                                 反代上游填 http://life-workbench-api:8080
+      - "${BIND_ADDR:-0.0.0.0}:${HTTP_PORT:-8080}:8080"

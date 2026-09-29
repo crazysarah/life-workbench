@@ -1,5 +1,9 @@
 # Caddy 反向代理 —— 自动申请并续期 Let's Encrypt 证书
-# 只有用域名访问（--profile https）时才需要这个文件。
+#
+# 只在叠加 deploy/docker-compose.caddy.yml 时才会被用到：
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.caddy.yml up -d --build
+#
+# 已有自建反代的，这个文件跟你的部署无关，可以忽略。
 
 {
 	email {$ACME_EMAIL}
