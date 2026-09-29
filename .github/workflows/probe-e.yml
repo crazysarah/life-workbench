@@ -1,0 +1,10 @@
+name: Probe E env nonexistent secret
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: E step 级 env 引用不存在的 secret
+        env:
+          FOO: ${{ secrets.THIS_SECRET_DOES_NOT_EXIST_XYZ }}
+        run: echo "长度 ${#FOO}"

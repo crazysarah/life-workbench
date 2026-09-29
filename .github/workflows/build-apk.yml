@@ -142,15 +142,19 @@ jobs:
       # 安卓工程是现场生成的（.gitignore 忽略），签名密钥也得在此时放进去。
       # Secret 存的是 base64 的 PKCS12 私钥。没配置就直接失败 ——
       # 不能让流水线退回「Gradle 现场随机生成密钥」，那种包一个都盖不上旧版本。
+      #
+      # ⚠️ secret 必须**内联在 run 里**，不要写成 step 级的 `env:` ——
+      #    那样整个 workflow 在启动阶段就挂（startup_failure，1 秒结束、连日志都没有）。
+      #    2026-09-29 用探针实测确认：`env:` + `${{ secrets.* }}` → startup_failure，
+      #    内联到 run 里 → 正常。
       - name: 还原签名密钥
-        env:
-          LW_DEBUG_KEYSTORE: ${{ secrets.LW_DEBUG_KEYSTORE }}
         run: |
-          if [ -z "$LW_DEBUG_KEYSTORE" ]; then
-            echo "::error::缺少 Secret「LW_DEBUG_KEYSTORE」：没有固定签名，打出来的包会装不上旧版本。请按 README「固定签名」一节生成密钥并配置 Secret。"
+          KS="${{ secrets.LW_DEBUG_KEYSTORE }}"
+          if [ -z "$KS" ]; then
+            echo "::error::缺少 Secret LW_DEBUG_KEYSTORE：没有固定签名，打出来的包会装不上旧版本。请按 README「固定签名」一节生成密钥并配置 Secret。"
             exit 1
           fi
-          echo "$LW_DEBUG_KEYSTORE" | base64 -d > mobile/android/app/lw-debug.p12
+          echo "$KS" | base64 -d > mobile/android/app/lw-debug.p12
           chmod 600 mobile/android/app/lw-debug.p12
           echo "密钥已就位（$(stat -c%s mobile/android/app/lw-debug.p12) 字节）"
 
