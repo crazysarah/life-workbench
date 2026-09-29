@@ -81,7 +81,20 @@ HTTP_PORT=8080
 
 ### 4. 启动
 
+**推荐一键脚本**，它会自动装 Docker、生成 `.env` 和随机口令、构建启动、跑健康检查，
+最后把访问地址和口令打在屏幕上：
+
 ```bash
+cd /opt/life-workbench
+bash deploy/setup-server.sh
+```
+
+端口被占了就换一个：`bash deploy/setup-server.sh --port 18080`
+
+**想手动控制**就自己来：
+
+```bash
+cp .env.example .env && vi .env    # 至少改 APP_PASSWORD
 docker compose up -d --build
 docker compose logs -f api
 ```
@@ -303,7 +316,9 @@ life-workbench/
 │  ├─ package.json
 │  ├─ capacitor.config.json
 │  └─ android/             （自动生成，不入库）
-├─ deploy/Caddyfile        可选：自动 HTTPS
+├─ deploy/
+│  ├─ Caddyfile            可选：自动 HTTPS
+│  └─ setup-server.sh      服务器端一键安装（装 Docker + 生成 .env + 起服务）
 ├─ docker-compose.yml
 ├─ .env.example
 └─ .github/workflows/build-apk.yml
