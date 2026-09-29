@@ -281,7 +281,11 @@ On Windows, run the same commands in Git Bash.
 
 ## 4. Install on your phone
 
-1. Copy `app-debug.apk` to the phone (send it to yourself, or use `adb install`)
+**Don't want to build it yourself?** Grab the prebuilt APK from
+[**Releases**](https://github.com/crazysarah/life-workbench/releases/latest) — same package,
+no baked-in address, so you fill in your server on first launch (step 3 below).
+
+1. Copy the APK to the phone (send it to yourself, or use `adb install`)
 2. Tap to install; allow "install from unknown sources" once
 3. Open the app:
    - **address was baked in** → just enter the `APP_PASSWORD` from `.env`

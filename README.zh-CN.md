@@ -272,7 +272,10 @@ Windows 上在 Git Bash 里跑同样的命令。
 
 ## 四、装到手机
 
-1. 把 `app-debug.apk` 传到手机（微信/QQ 传给自己、或用 `adb install`）
+**不想自己构建？** 直接到 [**Releases**](https://github.com/crazysarah/life-workbench/releases/latest)
+下预构建的 APK —— 同一套包，不内置地址，装完在 App 里填自己的服务器（见下面第 3 步）。
+
+1. 把 APK 传到手机（微信/QQ 传给自己、或用 `adb install`）
 2. 点开安装，系统提示「未知来源应用」时允许一次
 3. 打开 App：
    - **包里内置过地址** → 直接输入 `.env` 里的 `APP_PASSWORD` 就能用
