@@ -80,6 +80,8 @@ jobs:
           fi
           BUILD_TYPE="${{ github.event.inputs.build_type }}"
           if [ -z "$BUILD_TYPE" ]; then BUILD_TYPE="debug"; fi
+          # 公开仓库的 Actions 日志任何人都能看，把地址打码再打印
+          echo "::add-mask::$API_BASE"
           echo "api_base=$API_BASE" >> "$GITHUB_OUTPUT"
           echo "build_type=$BUILD_TYPE" >> "$GITHUB_OUTPUT"
           echo "服务端地址：$API_BASE"
