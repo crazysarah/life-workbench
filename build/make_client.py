@@ -100,6 +100,38 @@ PAGE_PATCH_LITERAL = [
         '.top-actions #clearSamplesBtn span{display:none}',
         '.top-actions{display:none}',
     ),
+    # ---------------------------------------------------------------------
+    # 隐藏 radio 不能当透明遮罩用
+    #
+    # `.field input,.field select,.compact-select{width:100%;height:44px;...}`
+    # 会连 .field 里的**隐藏** radio 一起命中，而它们又是
+    # `position:absolute` —— 于是每个 radio 变成一条横跨整个视口的透明长条
+    # （实测 1235×44px），4 个互相重叠，DOM 里最后一个盖在最上层把所有点击
+    # 都吃掉：用户点「暮色紫」，实际命中的是「深海蓝」的 radio，
+    # 表现就是「主题色点哪个都指向深海蓝」。同理波及记账页的「支出/收入」。
+    # 原页面给 .cover-upload input 加过 pointer-events:none，这两处漏了。
+    # ---------------------------------------------------------------------
+    (
+        '工作台外观的主题色 radio 不再当透明遮罩',
+        '.theme-swatches input{position:absolute;opacity:0}',
+        '.theme-swatches input{position:absolute;width:1px;height:1px;opacity:0;'
+        'pointer-events:none}',
+    ),
+    (
+        '记账页的「支出/收入」radio 不再当透明遮罩',
+        '.segmented input{position:absolute;opacity:0}',
+        '.segmented input{position:absolute;width:1px;height:1px;opacity:0;'
+        'pointer-events:none}',
+    ),
+    # 选中圈原先用 var(--plum)（= 当前已保存的主题色），于是「选了绿色」时
+    # 高亮环仍是上一次的主题色，看起来像没选中。改用该色块自己的 --swatch。
+    (
+        '选中的色块高亮环用它自己的颜色',
+        '.theme-swatches input:checked~i{box-shadow:0 0 0 3px var(--card),'
+        '0 0 0 5px var(--plum)}',
+        '.theme-swatches input:checked~i{box-shadow:0 0 0 3px var(--card),'
+        '0 0 0 5px var(--swatch)}',
+    ),
 ]
 
 

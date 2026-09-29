@@ -58,6 +58,10 @@ MUST_NOT_HAVE = [
     '/page/page_comm/inject.js',
     # 旧按钮已移除，不该再有任何引用（DOM、getElementById、CSS 都算）
     'clearSamplesBtn',
+    # 隐藏 radio 必须是「缩到 1px + pointer-events:none」，否则会变成透明遮罩
+    # 吃掉下面所有点击（历史 bug：主题色点哪个都指向最后一个色块）
+    '.theme-swatches input{position:absolute;opacity:0}',
+    '.segmented input{position:absolute;opacity:0}',
 ]
 
 
@@ -140,6 +144,25 @@ def main():
         fails.append('存在外部依赖：%s' % ', '.join(ext[:5]))
     else:
         print('[check] 外部依赖：0（页面自包含）')
+
+    # ---- 3b. 隐藏控件不能变成透明遮罩 ----
+    # 形如 `xxx input{...position:absolute...opacity:0...}` 的隐藏 radio/checkbox，
+    # 只要没写 pointer-events:none，在页面里就是一条透明长条盖住下层元素，
+    # 把鼠标点击全吃掉。历史 bug：主题色 4 个色块点哪个都指向最后一个（深海蓝）。
+    hidden_ctrl = re.compile(r'([.#][\w-]+(?:\s+[\w-]+)*\s+input)\{([^}]*)\}')
+    offenders = []
+    checked_hidden = 0
+    for m in hidden_ctrl.finditer(html):
+        sel, body = m.group(1), m.group(2)
+        if 'position:absolute' in body and 'opacity:0' in body:
+            checked_hidden += 1
+            if 'pointer-events:none' not in body:
+                offenders.append('%s{%s}' % (sel, body))
+    if offenders:
+        fails.append('隐藏 input 缺少 pointer-events:none，会当透明遮罩吃掉点击：%s'
+                     % ' / '.join(offenders))
+    else:
+        print('[check] 隐藏 input 遮罩：%d 处，均已 pointer-events:none' % checked_hidden)
 
     # ---- 4. API 调用点统计 ----
     api_calls = re.findall(r"/api/[a-z/:'\s+.\w()\[\]]*", html)
