@@ -98,9 +98,9 @@ jobs:
           echo "服务端地址：$API_BASE"
           echo "构建类型：$BUILD_TYPE"
 
-      - name: 生成客户端页面
+      - name: 注入服务端地址
         run: |
-          python3 build/make_client.py \
+          python3 build/inject_api_base.py \
             --api-base "${{ steps.cfg.outputs.api_base }}" \
             --out mobile/www/index.html
 

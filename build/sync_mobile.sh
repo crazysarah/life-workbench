@@ -14,8 +14,8 @@ if ! command -v "$PY" >/dev/null 2>&1; then
   PY=python
 fi
 
-echo "==> 1/5 生成客户端页面 (apiBase=${API_BASE:-同源})"
-"$PY" "$ROOT/build/make_client.py" --api-base "$API_BASE" --out "$ROOT/mobile/www/index.html"
+echo "==> 1/5 注入服务端地址 (apiBase=${API_BASE:-同源})"
+"$PY" "$ROOT/build/inject_api_base.py" --api-base "$API_BASE" --out "$ROOT/mobile/www/index.html"
 
 echo "==> 2/5 拷贝静态资源"
 cp "$ROOT/client/manifest.webmanifest" "$ROOT/mobile/www/"

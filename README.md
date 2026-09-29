@@ -136,6 +136,12 @@ http://你的服务器IP:端口      例：http://203.0.113.10:8080
 https://你的域名            例：https://life.example.com
 ```
 
+> 仓库里的 `client/index.html` 是**已经构建好的成品**（资料库的绑定属性和表 id 都清理过了），
+> 出包时只需给它换一个服务端地址，所以走 `build/inject_api_base.py`。
+> 只有在改了 `build/adapter.js` 之后才需要从原始页面完整重建
+> （`build/make_client.py`）——那要求你自备资料库导出的原始页面，
+> 源码库不收录它，因为它带着资料库的数据库 id。
+
 这个地址**不在代码里**，靠两处配置提供（两处填同一个值）：
 
 | 用在哪 | 配在哪 |
@@ -324,9 +330,12 @@ life-workbench/
 │  └─ icon*.svg
 ├─ build/                  构建脚本
 │  ├─ adapter.js           替换掉原资料库 SDK 的 API 适配器
-│  ├─ make_client.py       生成 client/index.html
+│  ├─ make_client.py       从原始页面完整生成 client/index.html（重建用）
+│  ├─ inject_api_base.py   给成品页面注入服务端地址（日常构建走这个）
 │  ├─ sync_mobile.sh       一键生成安卓工程
-│  └─ patch_android.py     给安卓工程打明文流量补丁
+│  ├─ patch_android.py     给安卓工程打明文流量补丁
+│  ├─ check_client.py      客户端产物静态自检
+│  └─ smoke_test.py        服务端端到端冒烟测试
 ├─ mobile/                 Capacitor 壳
 │  ├─ package.json
 │  ├─ capacitor.config.json
