@@ -10,8 +10,12 @@ Android 规定：同一个包名，**签名必须一致**才能覆盖安装。�
 Actions）每次都是全新的机器，那个文件不存在 —— Gradle 不会报错，而是**现场随机
 生成一把**，于是每次构建出来的包签名都不一样，一个都盖不上。
 
-修法：本地生成一把固定密钥，私钥放进仓库 Secret（构建时还原），指纹写进仓库
+修法：本地生成一把固定密钥，私钥放进仓库变量（构建时还原），指纹写进仓库
 （公开无害，用于构建后校验）。这样包签名恒定，以后可以一路覆盖升级。
+
+**为什么是「仓库变量」而不是 Secret**：2026-09-29 实测，本仓库引用一个「存在的」
+secret 会让 workflow 直接 startup_failure（1 秒结束、没有任何日志）；把同一份值
+放进仓库变量就正常。细节见 README「固定签名」一节。
 
 ## 用法
 
@@ -20,7 +24,7 @@ Actions）每次都是全新的机器，那个文件不存在 —— Gradle 不�
 
 生成后：
 
-    base64 -w0 build/lw-debug.p12 > /tmp/ks.b64        # 存成 Secret: LW_DEBUG_KEYSTORE
+    base64 -w0 build/lw-debug.p12 > /tmp/ks.b64        # 存成仓库变量 LW_DEBUG_KEYSTORE
     # 提交 build/signing-cert.sha256（脚本会自动写）
 
 `build/lw-debug.p12` 是私钥，**已经被 .gitignore 排除，绝对不要提交**。
@@ -123,7 +127,7 @@ def main():
         raise SystemExit(
             '已存在 %s —— 不覆盖。\n'
             '换密钥意味着签名变化，手机上必须卸载重装才能装新版；\n'
-            '确实要换再加 --force，并记得同步更新 GitHub Secret。' % out)
+            '确实要换再加 --force，并记得同步更新仓库变量。' % out)
 
     fp = generate(out, args.years)
 
@@ -141,10 +145,10 @@ def main():
     print('证书指纹 : %s' % fp)
     print('指纹已写入 %s' % FINGERPRINT_FILE)
 
-    # 顺手把 base64 也打出来，方便直接贴进 GitHub Secret
+    # 顺手把 base64 也打出来，方便直接贴进仓库变量
     b64 = base64.b64encode(out.read_bytes()).decode()
     print()
-    print('下一步 —— 把它存成仓库 Secret「LW_DEBUG_KEYSTORE」（base64 全文）：')
+    print('下一步 —— 把它存成仓库变量 LW_DEBUG_KEYSTORE（base64 全文）：')
     print('  base64 -w0 %s' % out)
     print('  长度 %d 字符' % len(b64))
     return 0

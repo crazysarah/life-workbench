@@ -184,7 +184,7 @@ def main():
         return 0
     if bad:
         print('[FAIL] 有 %d 处签名不一致 —— 这样的包装不上旧版本，'
-              '检查 CI 是否还原了固定签名密钥（Secret: LW_DEBUG_KEYSTORE）' % bad)
+              '检查 CI 是否还原了固定签名密钥（仓库变量 LW_DEBUG_KEYSTORE）' % bad)
         return 1
     print('[OK] 签名指纹全部一致')
     return 0

@@ -366,25 +366,31 @@ So the key is pinned:
 
 | Item | Where it lives | Notes |
 |---|---|---|
-| Private key `lw-debug.p12` | GitHub Secret `LW_DEBUG_KEYSTORE` (base64) | Never committed; `*.p12` is gitignored |
+| Private key `lw-debug.p12` | Repository variable `LW_DEBUG_KEYSTORE` (base64) | Never committed; `*.p12` is gitignored |
 | Certificate fingerprint | `build/signing-cert.sha256` | Fingerprint only, safe to publish |
+
+> Note it is a repository **variable**, not a Secret. That is deliberate —
+> see "Why not a Secret" below.
 
 One-time setup:
 
 ```bash
 python3 build/make_signing_key.py          # writes build/lw-debug.p12 and the fingerprint file
 base64 -w0 build/lw-debug.p12 > /tmp/ks.b64
-# GitHub → Settings → Secrets and variables → Actions → New repository secret
+# GitHub → Settings → Secrets and variables → Actions → Variables → New repository variable
 #   name: LW_DEBUG_KEYSTORE, value: the whole contents of /tmp/ks.b64
 rm /tmp/ks.b64
 ```
+
+> ⚠️ Variables are stored in **plain text** (Secrets are encrypted), so the CI scripts never
+> print the value — only the file size. Pull requests from forks can read variables too.
 
 CI enforces it in three places:
 
 | Step | What it does |
 |---|---|
-| Restore signing key | Writes the secret into the freshly generated Android project; a missing secret fails the build instead of silently falling back to a random key |
-| Check key against recorded fingerprint | Derives the certificate fingerprint from the key with `openssl` and compares it to `build/signing-cert.sha256`, so a rotated key with a stale secret is caught early |
+| Restore signing key | Writes the key into the freshly generated Android project; a missing variable fails the build instead of silently falling back to a random key |
+| Check key against recorded fingerprint | Derives the certificate fingerprint from the key with `openssl` and compares it to `build/signing-cert.sha256`, so a rotated key with a stale variable is caught early |
 | Verify packaged signature | Reads the certificate out of the built APK and compares fingerprints |
 
 Local builds need the same key: `build/patch_android.py` copies `build/lw-debug.p12` into the
@@ -397,6 +403,28 @@ python3 build/check_apk_signer.py dist/app-debug.apk
 > ⚠️ **Rotating the key forces every user to uninstall and reinstall once** — that is the only
 > way to change a signature. Don't regenerate it unless the private key leaks;
 > `make_signing_key.py` refuses to overwrite an existing key by default.
+
+#### Why not a Secret
+
+A private key would normally belong in a Secret, but on 2026-09-29 that turned out to be
+impossible here: referencing an **existing** secret kills the whole workflow during startup —
+`startup_failure`, dead in one second, no job created and **no logs at all**. `actionlint`
+reports nothing either, because the file is in fact syntactically valid.
+
+Minimal probes isolated it, and the failure is independent of how the secret is referenced
+(both `env:` and inline in `run` were tried):
+
+| Probe | What it referenced | Result |
+|---|---|---|
+| E | a secret that does not exist | fine |
+| F | a 12-byte secret | fine |
+| A / D / G | the 3568-character key secret (`env:` / inline / deleted and recreated) | startup_failure |
+| — | the same value stored as a repository variable | fine |
+
+The trigger is a large secret value going through startup-time processing. Moving the value to
+a repository variable (the same channel `vars.API_BASE` has always used) works.
+**Whenever you put a key into CI, verify it with a minimal probe like this first** — this class
+of failure leaves nothing to read in the logs.
 
 ### Cutting a release
 

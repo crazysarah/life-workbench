@@ -36,7 +36,7 @@ GRADLE = os.path.join(APP_DIR, 'build.gradle')
 # 安卓工程是 gitignore 的现场生成目录，所以密钥得在构建时拷进来
 KEYSTORE_NAME = 'lw-debug.p12'
 KEYSTORE_DST = os.path.join(APP_DIR, KEYSTORE_NAME)
-# 本地生成的私钥位置（同样被 .gitignore 排除）；CI 里由 Secret 还原
+# 本地生成的私钥位置（同样被 .gitignore 排除）；CI 里由仓库变量还原
 KEYSTORE_LOCAL = os.path.join(HERE, KEYSTORE_NAME)
 
 # 这几个值必须和 build/make_signing_key.py 生成密钥时用的一致
@@ -82,7 +82,7 @@ def ensure_keystore():
     sys.exit(
         '[patch_android][FAIL] 找不到签名密钥 %s\n'
         '  本地构建：先跑 python3 build/make_signing_key.py 生成 build/%s\n'
-        '  CI 构建：检查仓库 Secret「LW_DEBUG_KEYSTORE」是否配置，'
+        '  CI 构建：检查仓库变量 LW_DEBUG_KEYSTORE 是否配置，'
         '以及 workflow 里的「还原签名密钥」步骤有没有执行成功' % (KEYSTORE_NAME, KEYSTORE_NAME))
 
 

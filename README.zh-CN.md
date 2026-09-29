@@ -351,25 +351,31 @@ Android 规定：**同一个包名，签名必须一致**才能覆盖安装。�
 
 | 东西 | 放在哪 | 说明 |
 |---|---|---|
-| 私钥 `lw-debug.p12` | GitHub Secret `LW_DEBUG_KEYSTORE`（base64） | **绝不入库**，`.gitignore` 已排除 `*.p12` |
+| 私钥 `lw-debug.p12` | 仓库变量 `LW_DEBUG_KEYSTORE`（base64） | **绝不入库**，`.gitignore` 已排除 `*.p12` |
 | 证书指纹 | `build/signing-cert.sha256` | 只有指纹、没有私钥，可以公开，用于构建后校验 |
+
+> 这里用的是**仓库变量**（Variables）而不是 Secret —— 不是笔误，原因见下面的
+> 「为什么不是 Secret」。
 
 首次配置（只做一次）：
 
 ```bash
 python3 build/make_signing_key.py          # 生成 build/lw-debug.p12 和指纹文件
 base64 -w0 build/lw-debug.p12 > /tmp/ks.b64
-# GitHub → Settings → Secrets and variables → Actions → New repository secret
+# GitHub → Settings → Secrets and variables → Actions → Variables → New repository variable
 #   名称填 LW_DEBUG_KEYSTORE，值填 /tmp/ks.b64 的全部内容
 rm /tmp/ks.b64
 ```
+
+> ⚠️ 变量是**明文**存的（Secret 才是加密的）：CI 脚本里绝不打印它的内容，只报文件大小。
+> fork 来的 PR 也能读到变量，所以别把它当保险箱。
 
 CI 里有三道保险：
 
 | 步骤 | 作用 |
 |---|---|
-| 还原签名密钥 | 把 Secret 里的私钥写进现场生成的安卓工程；缺 Secret 直接失败，不退回「随机签名」 |
-| 核对密钥与仓库记录的指纹 | 用 `openssl` 算出私钥对应的证书指纹，和 `build/signing-cert.sha256` 比 —— 防止换了密钥忘了同步 Secret |
+| 还原签名密钥 | 把变量里的私钥写进现场生成的安卓工程；变量缺失直接失败，不退回「随机签名」 |
+| 核对密钥与仓库记录的指纹 | 用 `openssl` 算出私钥对应的证书指纹，和 `build/signing-cert.sha256` 比 —— 防止换了密钥忘了同步变量 |
 | 校验包内签名 | 构建完解开 APK 读证书指纹，对不上整条流水线失败 |
 
 本地构建同样需要密钥：`build/patch_android.py` 会自动把 `build/lw-debug.p12`
@@ -381,6 +387,25 @@ python3 build/check_apk_signer.py dist/app-debug.apk
 
 > ⚠️ **换密钥 = 所有用户都要卸载重装一次**（换签名只能靠卸载）。
 > 除非私钥泄露，否则别重新生成 —— `make_signing_key.py` 默认拒绝覆盖已有密钥。
+
+#### 为什么不是 Secret
+
+按常理私钥该放 Secret，但 2026-09-29 实测**本仓库行不通**：引用一个「存在的」secret
+会让整个 workflow 在启动阶段就死 —— `startup_failure`，1 秒结束，
+**job 都没创建、没有任何日志**，`actionlint` 也报不出问题（文件语法确实合法）。
+
+用最小探针逐个隔离后，确认与写法无关（`env:` 和 `run` 里内联都试过）：
+
+| 探针 | 内容 | 结果 |
+|---|---|---|
+| E | 引用**不存在**的 secret | 正常 |
+| F | 引用 12 字节的 secret | 正常 |
+| A / D / G | 引用 3568 字符的密钥 secret（`env:` / 内联 / 删掉重建） | startup_failure |
+| — | 同一份值放进仓库变量 | 正常 |
+
+问题出在「大值 secret 参与启动阶段处理」。换成仓库变量（`vars.API_BASE` 一直用得好好的，
+是同一条管道）就正常了。**以后往 CI 里放密钥，先用这种最小探针验一遍**，
+别等流水线红了才发现 —— 这类失败没有任何日志可以看。
 
 ### 发新版
 

@@ -11,7 +11,7 @@ data/
 .env
 .env.local
 
-# 签名私钥：绝不入库。私钥放 GitHub Secret（LW_DEBUG_KEYSTORE），
+# 签名私钥：绝不入库。私钥放仓库变量（LW_DEBUG_KEYSTORE），
 # 构建时还原；仓库里只留指纹 build/signing-cert.sha256
 *.p12
 *.jks

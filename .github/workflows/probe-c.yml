@@ -1,8 +1,0 @@
-name: Probe C baseline
-on: workflow_dispatch
-jobs:
-  probe:
-    runs-on: ubuntu-latest
-    steps:
-      - name: C 对照组
-        run: echo baseline ok
